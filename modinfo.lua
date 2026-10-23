@@ -14,7 +14,7 @@ How to use:
 ]]
 
 author = "XJS"
-version = "1.2.2"
+version = "1.3.0"
 
 icon_atlas = "modicon.xml"
 icon = "modicon.tex"
@@ -34,10 +34,10 @@ dst_compatible = true
 
 
 --This lets clients know if they need to get the mod from the Steam Workshop to join the game
-all_clients_require_mod = true
+all_clients_require_mod = false
 
 --This determines whether it causes a server to be marked as modded (and shows in the mod list)
-client_only_mod = false
+client_only_mod = true
 
 --These tags allow the server running this mod to be found with filters from the server listing screen
 server_filter_tags = {""}

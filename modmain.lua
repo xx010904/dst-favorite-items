@@ -1,14 +1,20 @@
 --[[
     收藏物品 / Favorite Items
-    版本: 1.2.2
-    修复说明:
-      - 修复换槽位复制/崩溃: 重入锁 + 实例级去重, 杜绝同一物品被多次 GiveItem 而复制。
-      - 修复 "记录了但不锁定" (专用服务器场景): 改为服务器权威架构。
-        客户端点收藏时, 把完整收藏表通过 RPC 同步给服务器; 服务器持有自己的收藏表,
-        并在自身背包事件上主动把物品锁回槽位 (服务器是权威端, 移动会同步回客户端)。
-      - 单机/主机: 客户端即服务器, 直接生效。
-      - 仅在背包静止态 (未手持 activeitem) 执行重组, 避免拖拽中途介入。
-      - 修掉专用服务器上 ThePlayer / TheInput 为 nil 的崩溃。
+    版本: 1.3.0
+    架构: 纯客户端 mod (client_only_mod = true)
+      参考 TMIR (Too-Many-Items-Rearrange) 的 "客户端发命令 -> 服务端执行" 模式:
+      - 客户端只负责: 记录收藏映射 + 把收藏表拼成一段自带完整逻辑的原生 Lua 命令字符串。
+      - 命令通过 TheNet:SendRemoteExecute (远程服务器管理员) 或 ExecuteConsoleCommand
+        (单机/主机, 客户端即服务器) 发到服务器执行; 服务器不加载本 mod, 只执行这段
+        原生 Lua, 用 UserToPlayer + inventory 原生 API 把物品锁回指定槽位。
+      - 因此本 mod 不在服务器侧运行任何代码, 彻底避免 "steam 订阅/校验覆盖本地修改" 的问题。
+    注意:
+      - 专用服务器下, 使用该功能的玩家必须是服务器管理员 (SendRemoteExecute 要求 admin),
+        否则只会看到提示而无法锁位 (非 admin 客户端无法驱动服务器)。
+      - 命令字符串只使用 DST 原生 API, 不依赖本 mod 在服务器的任何全局, 故服务器无需装本 mod。
+    修复历史:
+      - 1.1.0/1.2.x: 早期为服务端 mod, 存在换槽复制/崩溃、strict 模式加载报错、tonumber 缺失、
+        提示语不随语言切换等问题, 均已在客户端化过程中一并修正。
 ]]
 
 GLOBAL.MOD_FAVORITE_ITEM = {}
@@ -26,9 +32,8 @@ local mod_fav = GLOBAL.MOD_FAVORITE_ITEM
 -- 捕获标准库函数
 -- 注意: DST 给 mod 注入的 env 环境表 (scripts/mods.lua CreateEnvironment)
 -- 只注入了 pairs/ipairs/print/math/table/type/string/tostring/require/Class/GLOBAL
--- 等, 并没有 tonumber。直接用裸 tonumber(...) 会在 env 里查到 nil ->
--- "attempt to call global 'tonumber' (a nil value)"。这里统一从 GLOBAL(即 _G)
--- 捕获本 mod 实际用到的标准函数, 一劳永逸。
+-- 等, 并没有 tonumber/setmetatable 等。直接用裸 tonumber(...) / ExecuteConsoleCommand
+-- 会在 env 里查到 nil -> 报错。这里统一从 GLOBAL(即 _G) 捕获本 mod 实际用到的函数。
 -- ---------------------------------------------------------------------------
 local tonumber  = GLOBAL.tonumber
 local tostring  = GLOBAL.tostring
@@ -38,10 +43,10 @@ local string    = GLOBAL.string
 local pairs     = GLOBAL.pairs
 local ipairs    = GLOBAL.ipairs
 local type      = GLOBAL.type
+local ExecuteConsoleCommand = GLOBAL.ExecuteConsoleCommand
 
 -- ---------------------------------------------------------------------------
--- 多语言提示语 (in-game talker)
--- 依据 LanguageTranslator.defaultlang 选择, 默认 english
+-- 多语言提示语 (in-game talker) — 全部在客户端生成, 实时按当前语言取
 -- ---------------------------------------------------------------------------
 local MESSAGES = {
     english = {
@@ -50,6 +55,7 @@ local MESSAGES = {
         moved     = " moved to slot ",
         replaced  = " replaced the item in slot ",
         cleared   = "All favorited items cleared.",
+        need_admin = " favorites require server admin to lock",
     },
     schinese = {
         favorited = " 已收藏到槽位 ",
@@ -57,6 +63,7 @@ local MESSAGES = {
         moved     = " 被移动到槽位 ",
         replaced  = " 替换了槽位 ",
         cleared   = "已清除所有收藏物品。",
+        need_admin = " 收藏锁定需要服务器管理员权限",
     },
     tchinese = {
         favorited = " 已收藏到欄位 ",
@@ -64,6 +71,7 @@ local MESSAGES = {
         moved     = " 被移動到欄位 ",
         replaced  = " 替換了欄位 ",
         cleared   = "已清除所有收藏物品。",
+        need_admin = " 收藏鎖定需要伺服器管理員權限",
     },
     russian = {
         favorited = " добавлен в слот ",
@@ -71,6 +79,7 @@ local MESSAGES = {
         moved     = " перемещён в слот ",
         replaced  = " заменил предмет в слоте ",
         cleared   = "Все избранные предметы очищены.",
+        need_admin = " избранное требует прав администратора",
     },
     german = {
         favorited = " in Slot ",
@@ -78,6 +87,7 @@ local MESSAGES = {
         moved     = " wurde in Slot ",
         replaced  = " ersetzte den Gegenstand in Slot ",
         cleared   = "Alle favorisierten Gegenstände entfernt.",
+        need_admin = " Favoriten erfordern Server-Admin",
     },
     french = {
         favorited = " enregistré dans l'emplacement ",
@@ -85,6 +95,7 @@ local MESSAGES = {
         moved     = " déplacé vers l'emplacement ",
         replaced  = " a remplacé l'objet dans l'emplacement ",
         cleared   = "Tous les objets favoris ont été effacés.",
+        need_admin = " les favoris requièrent admin serveur",
     },
     spanish = {
         favorited = " guardado en el espacio ",
@@ -92,6 +103,7 @@ local MESSAGES = {
         moved     = " movido al espacio ",
         replaced  = " reemplazó el objeto en el espacio ",
         cleared   = "Se han borrado todos los objetos favoritos.",
+        need_admin = " favoritos requiere admin del servidor",
     },
     portuguese_br = {
         favorited = " favoritado no slot ",
@@ -99,6 +111,7 @@ local MESSAGES = {
         moved     = " movido para o slot ",
         replaced  = " substituiu o item no slot ",
         cleared   = "Todos os itens favoritados foram limpos.",
+        need_admin = " favoritos exigem admin do servidor",
     },
     korean = {
         favorited = " 슬롯 에 즐겨찾기 됨 ",
@@ -106,6 +119,7 @@ local MESSAGES = {
         moved     = " 슬롯 로 이동됨 ",
         replaced  = " 슬롯 의 아이템을 교체함 ",
         cleared   = "모든 즐겨찾기 아이템이 초기화되었습니다.",
+        need_admin = " 즐겨찾기는 서버 관리자 권한이 필요합니다",
     },
     japanese = {
         favorited = " をスロット にお気に入り登録",
@@ -113,6 +127,7 @@ local MESSAGES = {
         moved     = " をスロット に移動",
         replaced  = " がスロット のアイテムを置換",
         cleared   = "すべてのお気に入りアイテムを削除しました。",
+        need_admin = " お気に入りにはサーバー管理者権限が必要です",
     },
     italian = {
         favorited = " salvato nello slot ",
@@ -120,6 +135,7 @@ local MESSAGES = {
         moved     = " spostato nello slot ",
         replaced  = " ha sostituito l'oggetto nello slot ",
         cleared   = "Tutti gli oggetti preferiti sono stati cancellati.",
+        need_admin = " i preferiti richiedono admin server",
     },
     polish = {
         favorited = " dodano do slotu ",
@@ -127,9 +143,12 @@ local MESSAGES = {
         moved     = " przeniesiono do slotu ",
         replaced  = " zastąpił przedmiot w slocie ",
         cleared   = "Wszystkie ulubione przedmioty zostały wyczyszczone.",
+        need_admin = " ulubione wymagają admina serwera",
     },
 }
 
+-- 关键: 不能一次性锁定语言。DST 在 modmain 加载阶段 defaultlang 往往还是 english,
+-- 之后才设成玩家语言, 故每次取提示时实时解析。
 local function GetLang()
     if GLOBAL.LanguageTranslator and GLOBAL.LanguageTranslator.defaultlang then
         return GLOBAL.LanguageTranslator.defaultlang
@@ -137,9 +156,6 @@ local function GetLang()
     return "english"
 end
 
--- 关键: 不能像以前那样 local M = MESSAGES[GetLang()] 在加载时一次性锁定。
--- DST 在 modmain 加载阶段 defaultlang 往往还是 english, 之后才被设置成玩家语言,
--- 一次性锁定会导致提示语永远用英文。改为每次取提示时实时解析语言。
 local function GetMsg(key)
     local tbl = MESSAGES[GetLang()]
     if tbl == nil then tbl = MESSAGES.english end
@@ -202,102 +218,101 @@ function SlotIsBusy(tbl, slot)
     return false
 end
 
--- 仅在背包静止态 (未手持) 时执行; 由调用方保证
-local function PlaceFavoriteInSlot(inventory, prefab, slot)
-    if inventory == nil then return end
-    if inventory.activeitem ~= nil then return end
-
-    local current = inventory:GetItemInSlot(slot)
-    if current ~= nil and current.prefab == prefab then
-        return -- 已经在正确位置
-    end
-
-    local found = inventory:FindItem(function(i)
-        return i.prefab == prefab and inventory:GetItemSlot(i) ~= slot
-    end)
-    if found == nil then return end
-
-    local fromSlot = inventory:GetItemSlot(found)
-    if fromSlot == nil or fromSlot == slot then return end
-
-    local occupant = inventory:GetItemInSlot(slot)
-
-    -- 先把目标物品从原槽位取出, 避免 GiveItem 时重复计入
-    inventory:RemoveItemBySlot(fromSlot)
-
-    if occupant ~= nil then
-        -- 目标槽位被占: 先把占位取出, 放回目标物品原来的槽位
-        inventory:RemoveItemBySlot(slot)
-        inventory:GiveItem(occupant, fromSlot)
-    end
-
-    inventory:GiveItem(found, slot)
-end
-
 -- ---------------------------------------------------------------------------
--- 重组 (服务器权威端 / 主机): 把每个收藏物品锁回其槽位
--- 重入锁保护, 杜绝重入导致的重复 GiveItem / 复制
+-- 构建发往服务器的命令字符串
+-- 注意: 该字符串在服务器上以原生 Lua 执行, 本 mod 不在服务器加载, 因此只能使用
+-- DST 原生 API。逻辑与之前的服务端重组一致: 先腾空目标槽, 再放回, 杜绝 GiveItem
+-- 进入被占槽位时改放他处 (GiveItem 对占用的非堆叠槽会找下一个空槽)。
 -- ---------------------------------------------------------------------------
-local isReconciling = false
-
-local function Reconcile(player)
-    if isReconciling then return end
-
-    local inventory = player and player.components and player.components.inventory
-    if inventory == nil then return end
-    if inventory.activeitem ~= nil then return end -- 正在拖拽, 等待释放
-
-    local favorites = GLOBAL.FAVORITED_ITEMS
-    if favorites == nil or #favorites == 0 then return end
-
-    isReconciling = true
-    for _, v in pairs(favorites) do
+local function BuildServerCommand(userid, favorites)
+    local entries = {}
+    for _, v in ipairs(favorites) do
         if v.item ~= nil and v.slot ~= nil then
-            PlaceFavoriteInSlot(inventory, v.item, v.slot)
+            entries[#entries + 1] = string.format('{item=%q,slot=%d}', v.item, v.slot)
         end
     end
-    isReconciling = false
+    local tbl = "{" .. table.concat(entries, ",") .. "}"
+
+    local cmd = string.format([[
+local fi_userid = %q
+local fi_fav = %s
+local fi_p = UserToPlayer(fi_userid)
+if fi_p and fi_p.components and fi_p.components.inventory then
+  local fi_inv = fi_p.components.inventory
+  if fi_inv:GetActiveItem() == nil then
+    local function fi_find(prefab, exclude)
+      for s=1,fi_inv:GetNumSlots() do
+        local it = fi_inv:GetItemInSlot(s)
+        if it and it.prefab == prefab and s ~= exclude then return it, s end
+      end
+      return nil
+    end
+    for _,fi_f in ipairs(fi_fav) do
+      local fi_slot = fi_f.slot
+      local fi_cur = fi_inv:GetItemInSlot(fi_slot)
+      if not (fi_cur and fi_cur.prefab == fi_f.item) then
+        local fi_found, fi_fs = fi_find(fi_f.item, fi_slot)
+        if fi_found then
+          fi_inv:RemoveItemBySlot(fi_fs)
+          if fi_cur then
+            local fi_occ = fi_inv:RemoveItemBySlot(fi_slot)
+            fi_inv:GiveItem(fi_occ, fi_fs)
+          end
+          fi_inv:GiveItem(fi_found, fi_slot)
+        end
+      end
+    end
+  end
+end
+]], userid, tbl)
+
+    return cmd
 end
 
 -- ---------------------------------------------------------------------------
--- 事件合并: 任意背包事件 -> 下一帧统一重组 (服务器/主机执行权威移动)
--- 专用服务器客户端不在此处移动 (客户端背包是副本, 移动无效), 由服务器完成。
+-- 把收藏表发送到服务器 (客户端驱动)
+--   - 远程服务器管理员 -> TheNet:SendRemoteExecute (发到服务器执行)
+--   - 单机 / 主机 (客户端即服务器) -> ExecuteConsoleCommand (本地执行)
+--   - 非管理员客户端 -> 提示需要权限, 无法锁位
 -- ---------------------------------------------------------------------------
-local pending = {}
+local function SendFavoritesToServer()
+    if GLOBAL.ThePlayer == nil then return end
 
-local function ScheduleReconcile(player)
-    if player == nil or player.components == nil or player.components.inventory == nil then return end
-    if pending[player] then return end
-    pending[player] = true
+    local userid = tostring(GLOBAL.ThePlayer.userid or "")
+    local cmd = BuildServerCommand(userid, GLOBAL.FAVORITED_ITEMS)
 
-    player:DoTaskInTime(0, function()
-        pending[player] = false
+    local is_remote_admin = GLOBAL.TheNet:GetIsClient()
+        and GLOBAL.TheNet:GetIsServerAdmin()
+        and not GLOBAL.TheNet:GetIsServer()
 
-        if not GLOBAL.TheNet:GetIsServer() then
-            -- 专用服务器客户端: 不本地移动 (副本), 服务器权威端会处理
-            return
+    if is_remote_admin then
+        local x, y, z = GLOBAL.TheSim:ProjectScreenPos(GLOBAL.TheSim:GetPosition())
+        GLOBAL.TheNet:SendRemoteExecute(cmd, x, z)
+    elseif not GLOBAL.TheNet:GetIsServer() then
+        -- 客户端但非管理员: 无法驱动服务器锁位
+        if GLOBAL.ThePlayer.components and GLOBAL.ThePlayer.components.talker then
+            GLOBAL.ThePlayer.components.talker:Say(GetMsg("need_admin"))
         end
+    else
+        -- 单机 / 主机: 本地即服务器, 直接执行
+        ExecuteConsoleCommand(cmd)
+    end
+end
 
-        if player.components.inventory.activeitem ~= nil then
-            ScheduleReconcile(player) -- 等玩家放下手中物品再处理
-            return
-        end
-
-        if mod_fav.HAVE_FAVORITED and #GLOBAL.FAVORITED_ITEMS > 0 then
-            Reconcile(player)
-        end
+-- 背包变化后防抖同步 (客户端驱动服务器重组)
+local pending_sync = false
+local function ScheduleServerSync()
+    if GLOBAL.ThePlayer == nil then return end
+    if pending_sync then return end
+    pending_sync = true
+    GLOBAL.ThePlayer:DoTaskInTime(0.15, function()
+        pending_sync = false
+        SendFavoritesToServer()
     end)
 end
 
--- 立即把收藏表同步给服务器 (专用服务器客户端点击收藏时调用)
-local function SyncFavoritesToServer()
-    if GLOBAL.TheNet:GetIsServer() then return end -- 主机无需同步
-    local data = TableToString(GLOBAL.FAVORITED_ITEMS)
-    GLOBAL.SendModRPCToServer(GLOBAL.MOD_RPC[modname]["fiSync"], data)
-end
-
 -- ---------------------------------------------------------------------------
--- 收藏交互 (点击槽位 + 收藏键)
+-- 收藏交互 (点击槽位 + 收藏键) — 纯客户端 UI
 -- ---------------------------------------------------------------------------
 AddClassPostConstruct("widgets/invslot", function(invslot)
     local nClick = invslot.Click
@@ -351,13 +366,8 @@ AddClassPostConstruct("widgets/invslot", function(invslot)
                 GLOBAL.SHOWTABLE = TableToString(GLOBAL.FAVORITED_ITEMS)
                 SavePersistentData(GLOBAL.FAVITSAVE, GLOBAL.FAVORITED_ITEMS)
 
-                if GLOBAL.TheNet:GetIsServer() then
-                    -- 主机: 直接重组, 立即生效
-                    ScheduleReconcile(GLOBAL.ThePlayer)
-                else
-                    -- 专用服务器客户端: 同步给服务器, 由服务器锁回
-                    SyncFavoritesToServer()
-                end
+                -- 立即把收藏布局发往服务器锁位
+                SendFavoritesToServer()
             end
         end
 
@@ -366,28 +376,13 @@ AddClassPostConstruct("widgets/invslot", function(invslot)
 end)
 
 -- ---------------------------------------------------------------------------
--- RPC: 服务器接收客户端同步的收藏表, 更新权威收藏表并立即锁回
--- ---------------------------------------------------------------------------
-AddModRPCHandler(modname, "fiSync", function(player, data)
-    local inventory = player and player.components and player.components.inventory
-    if inventory == nil then return end
-
-    GLOBAL.FAVORITED_ITEMS = StringToTable(data)
-    mod_fav.HAVE_FAVORITED = (#GLOBAL.FAVORITED_ITEMS > 0)
-    SavePersistentData(GLOBAL.FAVITSAVE, GLOBAL.FAVORITED_ITEMS)
-
-    -- 立即锁回 (静止态才执行)
-    if inventory.activeitem == nil then
-        Reconcile(player)
-    end
-end)
-
--- ---------------------------------------------------------------------------
--- 玩家初始化: 监听背包事件 + 读取本地收藏存档
+-- 玩家初始化 (仅客户端): 读取本地收藏存档 + 监听背包副本变化以驱动服务器重组
 -- ---------------------------------------------------------------------------
 AddPlayerPostInit(function(inst)
     local function onInventoryEvent(inst, data)
-        ScheduleReconcile(inst)
+        if mod_fav.HAVE_FAVORITED and #GLOBAL.FAVORITED_ITEMS > 0 then
+            ScheduleServerSync()
+        end
     end
 
     inst:ListenForEvent("itemget", onInventoryEvent)
@@ -405,6 +400,7 @@ AddPlayerPostInit(function(inst)
                 if #sTable > 0 then
                     GLOBAL.FAVORITED_ITEMS = sTable
                     mod_fav.HAVE_FAVORITED = true
+                    SendFavoritesToServer()
                 end
             end
         end)
@@ -412,7 +408,6 @@ end)
 
 -- ---------------------------------------------------------------------------
 -- 清除所有收藏: CTRL + SHIFT + Z
--- (专用服务器上 TheInput 可能为 nil, 加守卫避免加载报错)
 -- ---------------------------------------------------------------------------
 if GLOBAL.TheInput ~= nil then
     GLOBAL.TheInput:AddKeyDownHandler(GLOBAL.KEY_Z, function()
@@ -422,10 +417,7 @@ if GLOBAL.TheInput ~= nil then
 
             GLOBAL.TheSim:ErasePersistentString(GLOBAL.FAVITSAVE)
 
-            -- 专用服务器: 同步清空给服务器
-            if not GLOBAL.TheNet:GetIsServer() then
-                GLOBAL.SendModRPCToServer(GLOBAL.MOD_RPC[modname]["fiSync"], "")
-            end
+            SendFavoritesToServer()
 
             if GLOBAL.ThePlayer and GLOBAL.ThePlayer.components and GLOBAL.ThePlayer.components.talker then
                 GLOBAL.ThePlayer.components.talker:Say(GetMsg("cleared"))
