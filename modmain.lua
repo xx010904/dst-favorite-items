@@ -17,7 +17,7 @@
       - 2.0.0 回到服务器 mod: 用 Mod RPC 通信, 普通玩家即可锁位, 不再需要管理员; 提示在客户端显示, 语言随玩家。
 ]]
 
-GLOBAL.MOD_FAVORITE_ITEM = GLOBAL.MOD_FAVORITE_ITEM or {}
+GLOBAL.MOD_FAVORITE_ITEM = {}
 local mod_fav = GLOBAL.MOD_FAVORITE_ITEM
 
 -- 捕获标准库 (DST mod env 未注入 tonumber/next 等)
