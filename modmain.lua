@@ -10,11 +10,11 @@
       - 修掉专用服务器上 ThePlayer 为 nil 的崩溃: 重组作用在事件所属玩家实体上。
 ]]
 
-GLOBAL.MOD_FAVORITE_ITEM = GLOBAL.MOD_FAVORITE_ITEM or {}
+GLOBAL.MOD_FAVORITE_ITEM = {}
 
 GLOBAL.MOD_FAVORITE_ITEM.INVENTORY_UPDATE_TIME = GLOBAL.tonumber(GetModConfigData("INVENTORY_UPDATE_TIME")) or 0.2
 GLOBAL.MOD_FAVORITE_ITEM.HAVE_FAVORITED = GLOBAL.MOD_FAVORITE_ITEM.HAVE_FAVORITED or false
-GLOBAL.FAVORITED_ITEMS = GLOBAL.FAVORITED_ITEMS or {}
+GLOBAL.FAVORITED_ITEMS = {}
 
 GLOBAL.FAVITSAVE = "FAVORITEITEMS"
 GLOBAL.SHOWTABLE = ""
@@ -404,16 +404,19 @@ end)
 
 -- ---------------------------------------------------------------------------
 -- 清除所有收藏: CTRL + SHIFT + Z
+-- (专用服务器上 TheInput 可能为 nil, 加守卫避免加载报错)
 -- ---------------------------------------------------------------------------
-GLOBAL.TheInput:AddKeyDownHandler(GLOBAL.KEY_Z, function()
-    if GLOBAL.TheInput:IsKeyDown(GLOBAL.KEY_CTRL) and GLOBAL.TheInput:IsKeyDown(GLOBAL.KEY_SHIFT) then
-        mod_fav.HAVE_FAVORITED = false
-        GLOBAL.FAVORITED_ITEMS = {}
+if GLOBAL.TheInput ~= nil then
+    GLOBAL.TheInput:AddKeyDownHandler(GLOBAL.KEY_Z, function()
+        if GLOBAL.TheInput:IsKeyDown(GLOBAL.KEY_CTRL) and GLOBAL.TheInput:IsKeyDown(GLOBAL.KEY_SHIFT) then
+            mod_fav.HAVE_FAVORITED = false
+            GLOBAL.FAVORITED_ITEMS = {}
 
-        GLOBAL.TheSim:ErasePersistentString(GLOBAL.FAVITSAVE)
+            GLOBAL.TheSim:ErasePersistentString(GLOBAL.FAVITSAVE)
 
-        if GLOBAL.ThePlayer and GLOBAL.ThePlayer.components and GLOBAL.ThePlayer.components.talker then
-            GLOBAL.ThePlayer.components.talker:Say(M.cleared)
+            if GLOBAL.ThePlayer and GLOBAL.ThePlayer.components and GLOBAL.ThePlayer.components.talker then
+                GLOBAL.ThePlayer.components.talker:Say(M.cleared)
+            end
         end
-    end
-end)
+    end)
+end
