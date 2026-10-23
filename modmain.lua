@@ -1,6 +1,6 @@
 --[[
     收藏物品 / Favorite Items
-    版本: 1.2.0
+    版本: 1.2.1
     修复说明:
       - 修复换槽位复制/崩溃: 重入锁 + 实例级去重, 杜绝同一物品被多次 GiveItem 而复制。
       - 修复 "记录了但不锁定" (专用服务器场景): 改为服务器权威架构。
@@ -21,6 +21,23 @@ GLOBAL.FAVITSAVE = "FAVORITEITEMS"
 GLOBAL.SHOWTABLE = ""
 
 local mod_fav = GLOBAL.MOD_FAVORITE_ITEM
+
+-- ---------------------------------------------------------------------------
+-- 捕获标准库函数
+-- 注意: DST 给 mod 注入的 env 环境表 (scripts/mods.lua CreateEnvironment)
+-- 只注入了 pairs/ipairs/print/math/table/type/string/tostring/require/Class/GLOBAL
+-- 等, 并没有 tonumber。直接用裸 tonumber(...) 会在 env 里查到 nil ->
+-- "attempt to call global 'tonumber' (a nil value)"。这里统一从 GLOBAL(即 _G)
+-- 捕获本 mod 实际用到的标准函数, 一劳永逸。
+-- ---------------------------------------------------------------------------
+local tonumber  = GLOBAL.tonumber
+local tostring  = GLOBAL.tostring
+local math      = GLOBAL.math
+local table     = GLOBAL.table
+local string    = GLOBAL.string
+local pairs     = GLOBAL.pairs
+local ipairs    = GLOBAL.ipairs
+local type      = GLOBAL.type
 
 -- ---------------------------------------------------------------------------
 -- 多语言提示语 (in-game talker)
