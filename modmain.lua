@@ -1,6 +1,6 @@
 --[[
     收藏物品 / Favorite Items
-    版本: 1.2.1
+    版本: 1.2.2
     修复说明:
       - 修复换槽位复制/崩溃: 重入锁 + 实例级去重, 杜绝同一物品被多次 GiveItem 而复制。
       - 修复 "记录了但不锁定" (专用服务器场景): 改为服务器权威架构。
@@ -137,7 +137,14 @@ local function GetLang()
     return "english"
 end
 
-local M = MESSAGES[GetLang()] or MESSAGES.english
+-- 关键: 不能像以前那样 local M = MESSAGES[GetLang()] 在加载时一次性锁定。
+-- DST 在 modmain 加载阶段 defaultlang 往往还是 english, 之后才被设置成玩家语言,
+-- 一次性锁定会导致提示语永远用英文。改为每次取提示时实时解析语言。
+local function GetMsg(key)
+    local tbl = MESSAGES[GetLang()]
+    if tbl == nil then tbl = MESSAGES.english end
+    return tbl[key] or MESSAGES.english[key] or key
+end
 
 -- ---------------------------------------------------------------------------
 -- 基础工具函数
@@ -316,27 +323,27 @@ AddClassPostConstruct("widgets/invslot", function(invslot)
                         if itemInSlotBusy == existsItem then
                             table.remove(GLOBAL.FAVORITED_ITEMS, itemInSlotBusy)
                             GLOBAL.ThePlayer.components.talker:Say(
-                                tostring(selectedItem.name) .. M.removed .. tostring(clickedSlotNumber))
+                                tostring(selectedItem.name) .. GetMsg("removed") .. tostring(clickedSlotNumber))
                         else
                             GLOBAL.FAVORITED_ITEMS[existsItem].slot = clickedSlotNumber
                             table.remove(GLOBAL.FAVORITED_ITEMS, itemInSlotBusy)
                             GLOBAL.ThePlayer.components.talker:Say(
-                                tostring(selectedItem.name) .. M.replaced .. tostring(clickedSlotNumber))
+                                tostring(selectedItem.name) .. GetMsg("replaced") .. tostring(clickedSlotNumber))
                         end
                     else
                         GLOBAL.FAVORITED_ITEMS[existsItem].slot = clickedSlotNumber
                         GLOBAL.ThePlayer.components.talker:Say(
-                            tostring(selectedItem.name) .. M.moved .. tostring(clickedSlotNumber))
+                            tostring(selectedItem.name) .. GetMsg("moved") .. tostring(clickedSlotNumber))
                     end
                 else
                     if itemInSlotBusy ~= false then
                         GLOBAL.FAVORITED_ITEMS[itemInSlotBusy].item = prefab
                         GLOBAL.ThePlayer.components.talker:Say(
-                            tostring(selectedItem.name) .. M.replaced .. tostring(clickedSlotNumber))
+                            tostring(selectedItem.name) .. GetMsg("replaced") .. tostring(clickedSlotNumber))
                     else
                         table.insert(GLOBAL.FAVORITED_ITEMS, { item = prefab, slot = clickedSlotNumber })
                         GLOBAL.ThePlayer.components.talker:Say(
-                            tostring(selectedItem.name) .. M.favorited .. tostring(clickedSlotNumber))
+                            tostring(selectedItem.name) .. GetMsg("favorited") .. tostring(clickedSlotNumber))
                     end
                 end
 
@@ -421,7 +428,7 @@ if GLOBAL.TheInput ~= nil then
             end
 
             if GLOBAL.ThePlayer and GLOBAL.ThePlayer.components and GLOBAL.ThePlayer.components.talker then
-                GLOBAL.ThePlayer.components.talker:Say(M.cleared)
+                GLOBAL.ThePlayer.components.talker:Say(GetMsg("cleared"))
             end
         end
     end)
