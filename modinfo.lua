@@ -14,7 +14,7 @@ How to use:
 ]]
 
 author = "XJS"
-version = "1.3.0"
+version = "2.0.0"
 
 icon_atlas = "modicon.xml"
 icon = "modicon.tex"
@@ -34,10 +34,11 @@ dst_compatible = true
 
 
 --This lets clients know if they need to get the mod from the Steam Workshop to join the game
+-- 设为 false: 普通玩家无需强制订阅也能进服 (只是没有这个 mod 的 UI); 若要 friends 自动下载, 上传工坊后改为 true
 all_clients_require_mod = false
 
---This determines whether it causes a server to be marked as modded (and shows in the mod list)
-client_only_mod = true
+-- 本 mod 为服务器 mod: 客户端 + 服务器都加载 (客户端负责 UI/提示, 服务器负责权威锁位)
+client_only_mod = false
 
 --These tags allow the server running this mod to be found with filters from the server listing screen
 server_filter_tags = {""}
