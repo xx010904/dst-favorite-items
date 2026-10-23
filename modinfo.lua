@@ -14,7 +14,7 @@ How to use:
 ]]
 
 author = "XJS"
-version = "1.1.0"
+version = "1.2.0"
 
 icon_atlas = "modicon.xml"
 icon = "modicon.tex"

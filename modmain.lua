@@ -1,13 +1,14 @@
 --[[
     收藏物品 / Favorite Items
-    版本: 1.1.0
+    版本: 1.2.0
     修复说明:
-      - 将原 "每次背包事件都同步遍历所有收藏项并强制移动" 的逻辑, 改为:
-        事件合并 -> 每帧最多一次延迟重组 (DoTaskInTime(0)) + 重入锁,
-        从根本上消除重入导致的同一物品被多次 GiveItem 而复制/崩溃的问题。
-      - 仅在背包处于静止态 (未手持 activeitem) 时执行重组, 避免拖拽中途介入。
-      - 按物品实例匹配, 同一物品在一次重组内只移动一次, 杜绝 "占位" 复制。
-      - 修掉专用服务器上 ThePlayer 为 nil 的崩溃: 重组作用在事件所属玩家实体上。
+      - 修复换槽位复制/崩溃: 重入锁 + 实例级去重, 杜绝同一物品被多次 GiveItem 而复制。
+      - 修复 "记录了但不锁定" (专用服务器场景): 改为服务器权威架构。
+        客户端点收藏时, 把完整收藏表通过 RPC 同步给服务器; 服务器持有自己的收藏表,
+        并在自身背包事件上主动把物品锁回槽位 (服务器是权威端, 移动会同步回客户端)。
+      - 单机/主机: 客户端即服务器, 直接生效。
+      - 仅在背包静止态 (未手持 activeitem) 执行重组, 避免拖拽中途介入。
+      - 修掉专用服务器上 ThePlayer / TheInput 为 nil 的崩溃。
 ]]
 
 GLOBAL.MOD_FAVORITE_ITEM = {}
@@ -177,23 +178,18 @@ function SlotIsBusy(tbl, slot)
     return false
 end
 
--- ---------------------------------------------------------------------------
--- 稳定的单物品移动 (用于 RPC: 专用服务器按客户端指令移动具体物品)
--- 只在物品当前不在目标槽位时才移动, 且使用重入锁, 避免重复 GiveItem
--- ---------------------------------------------------------------------------
-local isMoving = false
-
-local function MoveItemToSlot(inventory, item_prefab, slot)
-    if inventory == nil or inventory.activeitem ~= nil then return end
-    if item_prefab == nil or slot == nil then return end
+-- 仅在背包静止态 (未手持) 时执行; 由调用方保证
+local function PlaceFavoriteInSlot(inventory, prefab, slot)
+    if inventory == nil then return end
+    if inventory.activeitem ~= nil then return end
 
     local current = inventory:GetItemInSlot(slot)
-    if current ~= nil and current.prefab == item_prefab then
-        return -- 已在正确位置
+    if current ~= nil and current.prefab == prefab then
+        return -- 已经在正确位置
     end
 
     local found = inventory:FindItem(function(i)
-        return i.prefab == item_prefab and inventory:GetItemSlot(i) ~= slot
+        return i.prefab == prefab and inventory:GetItemSlot(i) ~= slot
     end)
     if found == nil then return end
 
@@ -202,24 +198,23 @@ local function MoveItemToSlot(inventory, item_prefab, slot)
 
     local occupant = inventory:GetItemInSlot(slot)
 
-    isMoving = true
+    -- 先把目标物品从原槽位取出, 避免 GiveItem 时重复计入
     inventory:RemoveItemBySlot(fromSlot)
+
     if occupant ~= nil then
+        -- 目标槽位被占: 先把占位取出, 放回目标物品原来的槽位
         inventory:RemoveItemBySlot(slot)
-    end
-    inventory:GiveItem(found, slot)
-    if occupant ~= nil then
         inventory:GiveItem(occupant, fromSlot)
     end
-    isMoving = false
+
+    inventory:GiveItem(found, slot)
 end
 
 -- ---------------------------------------------------------------------------
--- 本地权威重组 (单机 / 主机): 每帧最多一次, 重入锁保护
--- 按物品实例匹配, 一次重组内每个物品只移动一次, 杜绝复制
+-- 重组 (服务器权威端 / 主机): 把每个收藏物品锁回其槽位
+-- 重入锁保护, 杜绝重入导致的重复 GiveItem / 复制
 -- ---------------------------------------------------------------------------
 local isReconciling = false
-local pendingReconcile = false
 
 local function Reconcile(player)
     if isReconciling then return end
@@ -232,76 +227,49 @@ local function Reconcile(player)
     if favorites == nil or #favorites == 0 then return end
 
     isReconciling = true
-
-    local used = {} -- 本帧已处理的物品实例, 防止重复移动
     for _, v in pairs(favorites) do
-        local itemPrefab = v.item
-        local slot = v.slot
-        if itemPrefab ~= nil and slot ~= nil then
-            local current = inventory:GetItemInSlot(slot)
-            if current == nil or current.prefab ~= itemPrefab then
-                local found = inventory:FindItem(function(i)
-                    return i.prefab == itemPrefab
-                        and inventory:GetItemSlot(i) ~= slot
-                        and not used[i]
-                end)
-                if found ~= nil then
-                    used[found] = true
-                    local fromSlot = inventory:GetItemSlot(found)
-                    if fromSlot ~= nil and fromSlot ~= slot then
-                        local occupant = inventory:GetItemInSlot(slot)
-                        inventory:RemoveItemBySlot(fromSlot)
-                        if occupant ~= nil then
-                            inventory:RemoveItemBySlot(slot)
-                        end
-                        inventory:GiveItem(found, slot)
-                        if occupant ~= nil then
-                            used[occupant] = true
-                            inventory:GiveItem(occupant, fromSlot)
-                        end
-                    end
-                end
-            end
+        if v.item ~= nil and v.slot ~= nil then
+            PlaceFavoriteInSlot(inventory, v.item, v.slot)
         end
     end
-
     isReconciling = false
 end
 
 -- ---------------------------------------------------------------------------
--- 事件合并: 任意背包事件 -> 延迟到下一帧统一重组 (客户端则通知服务器)
+-- 事件合并: 任意背包事件 -> 下一帧统一重组 (服务器/主机执行权威移动)
+-- 专用服务器客户端不在此处移动 (客户端背包是副本, 移动无效), 由服务器完成。
 -- ---------------------------------------------------------------------------
+local pending = {}
+
 local function ScheduleReconcile(player)
     if player == nil or player.components == nil or player.components.inventory == nil then return end
-    if pendingReconcile then return end
-    pendingReconcile = true
+    if pending[player] then return end
+    pending[player] = true
 
     player:DoTaskInTime(0, function()
-        pendingReconcile = false
+        pending[player] = false
 
-        if isReconciling then
-            ScheduleReconcile(player)
+        if not GLOBAL.TheNet:GetIsServer() then
+            -- 专用服务器客户端: 不本地移动 (副本), 服务器权威端会处理
             return
         end
+
         if player.components.inventory.activeitem ~= nil then
             ScheduleReconcile(player) -- 等玩家放下手中物品再处理
             return
         end
 
-        if GLOBAL.TheNet:GetIsServer() then
-            -- 单机 / 主机: 本地权威重组
-            if mod_fav.HAVE_FAVORITED then
-                Reconcile(player)
-            end
-        else
-            -- 客户端连接专用服务器: 把收藏指令发给服务器
-            if mod_fav.HAVE_FAVORITED then
-                for k, v in pairs(GLOBAL.FAVORITED_ITEMS) do
-                    SendModRPCToServer(MOD_RPC[modname]["fiRemoteTask"], v.item, v.slot)
-                end
-            end
+        if mod_fav.HAVE_FAVORITED and #GLOBAL.FAVORITED_ITEMS > 0 then
+            Reconcile(player)
         end
     end)
+end
+
+-- 立即把收藏表同步给服务器 (专用服务器客户端点击收藏时调用)
+local function SyncFavoritesToServer()
+    if GLOBAL.TheNet:GetIsServer() then return end -- 主机无需同步
+    local data = TableToString(GLOBAL.FAVORITED_ITEMS)
+    GLOBAL.SendModRPCToServer(GLOBAL.MOD_RPC[modname]["fiSync"], data)
 end
 
 -- ---------------------------------------------------------------------------
@@ -358,6 +326,14 @@ AddClassPostConstruct("widgets/invslot", function(invslot)
                 mod_fav.HAVE_FAVORITED = true
                 GLOBAL.SHOWTABLE = TableToString(GLOBAL.FAVORITED_ITEMS)
                 SavePersistentData(GLOBAL.FAVITSAVE, GLOBAL.FAVORITED_ITEMS)
+
+                if GLOBAL.TheNet:GetIsServer() then
+                    -- 主机: 直接重组, 立即生效
+                    ScheduleReconcile(GLOBAL.ThePlayer)
+                else
+                    -- 专用服务器客户端: 同步给服务器, 由服务器锁回
+                    SyncFavoritesToServer()
+                end
             end
         end
 
@@ -366,12 +342,20 @@ AddClassPostConstruct("widgets/invslot", function(invslot)
 end)
 
 -- ---------------------------------------------------------------------------
--- RPC: 服务器按客户端指令把具体物品放回目标槽位
+-- RPC: 服务器接收客户端同步的收藏表, 更新权威收藏表并立即锁回
 -- ---------------------------------------------------------------------------
-AddModRPCHandler(modname, "fiRemoteTask", function(player, item, slot)
+AddModRPCHandler(modname, "fiSync", function(player, data)
     local inventory = player and player.components and player.components.inventory
     if inventory == nil then return end
-    MoveItemToSlot(inventory, item, slot)
+
+    GLOBAL.FAVORITED_ITEMS = StringToTable(data)
+    mod_fav.HAVE_FAVORITED = (#GLOBAL.FAVORITED_ITEMS > 0)
+    SavePersistentData(GLOBAL.FAVITSAVE, GLOBAL.FAVORITED_ITEMS)
+
+    -- 立即锁回 (静止态才执行)
+    if inventory.activeitem == nil then
+        Reconcile(player)
+    end
 end)
 
 -- ---------------------------------------------------------------------------
@@ -413,6 +397,11 @@ if GLOBAL.TheInput ~= nil then
             GLOBAL.FAVORITED_ITEMS = {}
 
             GLOBAL.TheSim:ErasePersistentString(GLOBAL.FAVITSAVE)
+
+            -- 专用服务器: 同步清空给服务器
+            if not GLOBAL.TheNet:GetIsServer() then
+                GLOBAL.SendModRPCToServer(GLOBAL.MOD_RPC[modname]["fiSync"], "")
+            end
 
             if GLOBAL.ThePlayer and GLOBAL.ThePlayer.components and GLOBAL.ThePlayer.components.talker then
                 GLOBAL.ThePlayer.components.talker:Say(M.cleared)
