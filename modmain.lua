@@ -45,6 +45,7 @@ local MESSAGES = {
         removed   = " removed from slot ",
         moved     = " moved to slot ",
         replaced  = " replaced the item in slot ",
+        removed_suffix = "",
         cleared   = "All favorited items cleared.",
     },
     schinese = {
@@ -52,6 +53,7 @@ local MESSAGES = {
         removed   = " 已从槽位 ",
         moved     = " 被移动到槽位 ",
         replaced  = " 替换了槽位 ",
+        removed_suffix = " 移除",
         cleared   = "已清除所有收藏物品。",
     },
     tchinese = {
@@ -59,6 +61,7 @@ local MESSAGES = {
         removed   = " 已從欄位 ",
         moved     = " 被移動到欄位 ",
         replaced  = " 替換了欄位 ",
+        removed_suffix = " 移除",
         cleared   = "已清除所有收藏物品。",
     },
     russian = {
@@ -451,12 +454,18 @@ if GLOBAL.TheNet:GetIsClient() then
                     GLOBAL.TheFrontEnd:PopScreen()
                     local index = SlotIsBusy(FAVORITED_ITEMS, slot_number)
                     if index ~= false then
+                        local removed_prefab = FAVORITED_ITEMS[index].item
                         table.remove(FAVORITED_ITEMS, index)
                         HAVE_FAVORITED = true
                         GLOBAL.TheSim:SetPersistentString(FAVITSAVE, TableToString(FAVORITED_ITEMS), false)
                         SendFavorites(true)
                         HAVE_FAVORITED = #FAVORITED_ITEMS > 0
                         RefreshFavoriteMarkers()
+                        local player = GLOBAL.ThePlayer
+                        if player ~= nil and player.components ~= nil and player.components.talker ~= nil then
+                            player.components.talker:Say(GetFavoriteDisplayName(removed_prefab)
+                                .. GetMsg("removed") .. tostring(slot_number) .. GetMsg("removed_suffix"))
+                        end
                     end
                 end,
             },
