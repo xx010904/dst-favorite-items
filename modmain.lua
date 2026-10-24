@@ -538,21 +538,17 @@ if GLOBAL.TheNet:GetIsClient() then
                     local itemInSlotBusy = SlotIsBusy(FAVORITED_ITEMS, clickedSlotNumber)
 
                     if HAVE_FAVORITED and existsItem ~= false then
-                        if itemInSlotBusy ~= false then
-                            if itemInSlotBusy == existsItem then
-                                table.remove(FAVORITED_ITEMS, itemInSlotBusy)
-                                GLOBAL.ThePlayer.components.talker:Say(
-                                    tostring(selectedItem.name) .. GetMsg("removed") .. tostring(clickedSlotNumber))
-                            else
+                        if itemInSlotBusy ~= existsItem then
+                            if itemInSlotBusy ~= false then
                                 FAVORITED_ITEMS[existsItem].slot = clickedSlotNumber
                                 table.remove(FAVORITED_ITEMS, itemInSlotBusy)
                                 GLOBAL.ThePlayer.components.talker:Say(
                                     tostring(selectedItem.name) .. GetMsg("replaced") .. tostring(clickedSlotNumber))
+                            else
+                                FAVORITED_ITEMS[existsItem].slot = clickedSlotNumber
+                                GLOBAL.ThePlayer.components.talker:Say(
+                                    tostring(selectedItem.name) .. GetMsg("moved") .. tostring(clickedSlotNumber))
                             end
-                        else
-                            FAVORITED_ITEMS[existsItem].slot = clickedSlotNumber
-                            GLOBAL.ThePlayer.components.talker:Say(
-                                tostring(selectedItem.name) .. GetMsg("moved") .. tostring(clickedSlotNumber))
                         end
                     else
                         if itemInSlotBusy ~= false then
