@@ -144,6 +144,21 @@ local REMOVE_CONFIRM_MESSAGES = {
     polish = { title = "Usunąć z ulubionych?", body = "Usunąć oznaczenie ulubionego przedmiotu %s?", yes = "Usuń", no = "Anuluj" },
 }
 
+local SHORTCUT_MESSAGES = {
+    english = { hidden = "Favorite stars hidden. Press %s again to show them.", shown = "Favorite stars shown.", choose_slot = "Choose a slot to lock %s to." },
+    schinese = { hidden = "星星已隐藏，再按 %s 显示。", shown = "星星已显示。", choose_slot = "选择一个槽位来锁定%s。" },
+    tchinese = { hidden = "星星已隱藏，再按 %s 顯示。", shown = "星星已顯示。", choose_slot = "選擇一個欄位來鎖定%s。" },
+    russian = { hidden = "Звёзды избранного скрыты. Нажмите %s ещё раз, чтобы показать их.", shown = "Звёзды избранного показаны.", choose_slot = "Выберите слот для закрепления предмета «%s»." },
+    german = { hidden = "Favoritensterne ausgeblendet. Drücke %s erneut, um sie anzuzeigen.", shown = "Favoritensterne angezeigt.", choose_slot = "Wähle einen Platz für %s." },
+    french = { hidden = "Étoiles masquées. Appuyez encore sur %s pour les afficher.", shown = "Étoiles affichées.", choose_slot = "Choisissez un emplacement pour verrouiller %s." },
+    spanish = { hidden = "Estrellas ocultas. Pulsa %s otra vez para mostrarlas.", shown = "Estrellas visibles.", choose_slot = "Elige una casilla para fijar %s." },
+    portuguese_br = { hidden = "Estrelas ocultas. Pressione %s novamente para mostrá-las.", shown = "Estrelas visíveis.", choose_slot = "Escolha um espaço para fixar %s." },
+    korean = { hidden = "즐겨찾기 별표를 숨겼습니다. 다시 보려면 %s 키를 누르세요.", shown = "즐겨찾기 별표를 표시했습니다.", choose_slot = "%s을(를) 고정할 슬롯을 선택하세요." },
+    japanese = { hidden = "お気に入りの星を隠しました。もう一度 %s を押すと表示します。", shown = "お気に入りの星を表示しました。", choose_slot = "%sを固定するスロットを選んでください。" },
+    italian = { hidden = "Stelle nascoste. Premi di nuovo %s per mostrarle.", shown = "Stelle visibili.", choose_slot = "Scegli uno slot in cui bloccare %s." },
+    polish = { hidden = "Gwiazdki ukryte. Naciśnij ponownie %s, aby je pokazać.", shown = "Gwiazdki widoczne.", choose_slot = "Wybierz miejsce do przypięcia przedmiotu %s." },
+}
+
 local LANGUAGE_BY_LOCALE = {
     en = "english",
     fr = "french",
@@ -326,10 +341,17 @@ if GLOBAL.TheNet:GetIsClient() then
     local Text = require("widgets/text")
     local PopupDialogScreen = require("screens/redux/popupdialog")
     local FAVORITE_MARKER_FONT = GLOBAL.NEWFONT_OUTLINE or "spirequal_outline"
+    local FAVORITE_KEY = GetModConfigData("FI_SWITCH_KEY"):lower():byte()
     local FAVORITED_ITEMS = {}
     local HAVE_FAVORITED = false
     local FAVITSAVE = "FAVORITEITEMS"
     local FAVORITE_SLOT_WIDGETS = {}
+    local HOVERED_PLAYER_SLOT = nil
+    local STAR_MARKERS_VISIBLE = true
+    local STAR_SELECTION_MODE = false
+    local STAR_SELECTION_PREFAB = nil
+    local STAR_BLINK_VISIBLE = true
+    local STAR_BLINK_TASK = nil
     local FAVORITES_SYNC_PENDING = true
     local CLIENT_INVENTORY_SYNC_PENDING = false
 
@@ -352,6 +374,42 @@ if GLOBAL.TheNet:GetIsClient() then
         local player = GLOBAL.ThePlayer
         return player ~= nil and player.replica ~= nil and player.replica.inventory ~= nil
             and tostring(invslot.container) == tostring(player.replica.inventory)
+    end
+
+    local function UpdateFavoriteStarAppearance(marker)
+        if STAR_SELECTION_MODE then
+            local alpha = STAR_BLINK_VISIBLE and 1 or 0.12
+            local scale = marker.focus and 1.3 or 1
+            marker.star:SetScale(scale)
+            marker.star:SetColour(1, 0.9, 0.3, alpha)
+        elseif marker.focus then
+            marker.star:SetScale(1.3)
+            marker.star:SetColour(1, 0.9, 0.3, 1)
+        else
+            marker.star:SetScale(1)
+            marker.star:SetColour(1, 0.82, 0.2, 0.58)
+        end
+    end
+
+    local function StartFavoriteStarBlink()
+        if STAR_BLINK_TASK == nil and GLOBAL.ThePlayer ~= nil then
+            STAR_BLINK_TASK = GLOBAL.ThePlayer:DoPeriodicTask(1, function()
+                STAR_BLINK_VISIBLE = not STAR_BLINK_VISIBLE
+                for invslot in pairs(FAVORITE_SLOT_WIDGETS) do
+                    if invslot.favorite_marker ~= nil then
+                        UpdateFavoriteStarAppearance(invslot.favorite_marker)
+                    end
+                end
+            end)
+        end
+    end
+
+    local function StopFavoriteStarBlink()
+        if STAR_BLINK_TASK ~= nil then
+            STAR_BLINK_TASK:Cancel()
+            STAR_BLINK_TASK = nil
+        end
+        STAR_BLINK_VISIBLE = true
     end
 
     local function CreateFavoriteMarker(invslot)
@@ -382,15 +440,13 @@ if GLOBAL.TheNet:GetIsClient() then
             if self.favorite_marker_base_gain ~= nil then
                 self.favorite_marker_base_gain(self)
             end
-            self.star:SetScale(1.3)
-            self.star:SetColour(1, 0.9, 0.3, 1)
+            UpdateFavoriteStarAppearance(self)
         end
         marker.OnLoseFocus = function(self)
             if self.favorite_marker_base_lose ~= nil then
                 self.favorite_marker_base_lose(self)
             end
-            self.star:SetScale(1)
-            self.star:SetColour(1, 0.82, 0.2, 0.58)
+            UpdateFavoriteStarAppearance(self)
         end
         local oldOnControl = marker.OnControl
         marker.OnControl = function(self, control, down)
@@ -410,8 +466,13 @@ if GLOBAL.TheNet:GetIsClient() then
             local marker = invslot.favorite_marker
             if marker ~= nil then
                 local favorite = IsPlayerInventorySlot(invslot) and GetFavoriteForSlot(invslot.num) or nil
-                if favorite ~= nil then
-                    marker:SetHoverText(GetFavoriteDisplayName(favorite.item), {
+                local show_marker = favorite ~= nil and STAR_MARKERS_VISIBLE or STAR_SELECTION_MODE
+                if show_marker then
+                    local tooltip_text = favorite ~= nil
+                        and GetFavoriteDisplayName(favorite.item)
+                        or string.format((SHORTCUT_MESSAGES[GetLang()] or SHORTCUT_MESSAGES.english).choose_slot,
+                            GetFavoriteDisplayName(STAR_SELECTION_PREFAB))
+                    marker:SetHoverText(tooltip_text, {
                         font = FAVORITE_MARKER_FONT,
                         font_size = 44,
                         attach_to_parent = marker,
@@ -419,6 +480,7 @@ if GLOBAL.TheNet:GetIsClient() then
                         offset_y = 28,
                     })
                     marker:Show()
+                    UpdateFavoriteStarAppearance(marker)
                 else
                     marker:Hide()
                 end
@@ -439,6 +501,42 @@ if GLOBAL.TheNet:GetIsClient() then
 
     local function SendClear()
         SendModRPCToServer(GetModRPC(MOD_RPC, "ClearFavorites"))
+    end
+
+    local function SetFavoriteForSlot(prefab, slot_number)
+        if prefab == nil then return false end
+
+        local item_index = ContainsItemInTable(FAVORITED_ITEMS, prefab)
+        local slot_index = SlotIsBusy(FAVORITED_ITEMS, slot_number)
+        local message_key
+
+        if item_index ~= false then
+            if slot_index == item_index then return false end
+            FAVORITED_ITEMS[item_index].slot = slot_number
+            if slot_index ~= false then
+                table.remove(FAVORITED_ITEMS, slot_index)
+                message_key = "replaced"
+            else
+                message_key = "moved"
+            end
+        elseif slot_index ~= false then
+            FAVORITED_ITEMS[slot_index].item = prefab
+            message_key = "replaced"
+        else
+            table.insert(FAVORITED_ITEMS, { item = prefab, slot = slot_number })
+            message_key = "favorited"
+        end
+
+        HAVE_FAVORITED = true
+        GLOBAL.TheSim:SetPersistentString(FAVITSAVE, TableToString(FAVORITED_ITEMS), false)
+        SendFavorites(true)
+        RefreshFavoriteMarkers()
+
+        local player = GLOBAL.ThePlayer
+        if player ~= nil and player.components ~= nil and player.components.talker ~= nil then
+            player.components.talker:Say(GetFavoriteDisplayName(prefab) .. GetMsg(message_key) .. tostring(slot_number))
+        end
+        return true
     end
 
     ShowRemoveFavoriteConfirmation = function(slot_number)
@@ -517,6 +615,19 @@ if GLOBAL.TheNet:GetIsClient() then
 
     AddClassPostConstruct("widgets/invslot", function(invslot)
         if IsPlayerInventorySlot(invslot) then
+            local oldOnGainFocus = invslot.OnGainFocus
+            invslot.OnGainFocus = function(self, ...)
+                if oldOnGainFocus ~= nil then oldOnGainFocus(self, ...) end
+                HOVERED_PLAYER_SLOT = self
+            end
+            local oldOnLoseFocus = invslot.OnLoseFocus
+            invslot.OnLoseFocus = function(self, ...)
+                if oldOnLoseFocus ~= nil then oldOnLoseFocus(self, ...) end
+                if HOVERED_PLAYER_SLOT == self then
+                    HOVERED_PLAYER_SLOT = nil
+                end
+            end
+
             FAVORITE_SLOT_WIDGETS[invslot] = true
             invslot.inst:DoTaskInTime(0, function()
                 if invslot.inst:IsValid() and invslot:GetParent() ~= nil then
@@ -531,9 +642,16 @@ if GLOBAL.TheNet:GetIsClient() then
 
         local oldClick = invslot.Click
         invslot.Click = function(invslot, stack_mod)
+            if STAR_SELECTION_MODE
+                and GLOBAL.TheInput:IsKeyDown(FAVORITE_KEY)
+                and IsPlayerInventorySlot(invslot) then
+                SetFavoriteForSlot(STAR_SELECTION_PREFAB, invslot.num)
+                return true
+            end
+
             local res = oldClick(invslot, stack_mod)
 
-            if GLOBAL.TheInput:IsKeyDown(GetModConfigData("FI_SWITCH_KEY"):lower():byte()) then
+            if GLOBAL.TheInput:IsKeyDown(FAVORITE_KEY) then
                 if tostring(invslot.container) ~= tostring(GLOBAL.ThePlayer.replica.inventory) then
                     return res
                 end
@@ -542,39 +660,7 @@ if GLOBAL.TheNet:GetIsClient() then
                     local clickedSlotNumber = invslot.num
                     local selectedItem = invslot.tile.item
                     local prefab = selectedItem.prefab
-
-                    local existsItem = ContainsItemInTable(FAVORITED_ITEMS, prefab)
-                    local itemInSlotBusy = SlotIsBusy(FAVORITED_ITEMS, clickedSlotNumber)
-
-                    if HAVE_FAVORITED and existsItem ~= false then
-                        if itemInSlotBusy ~= existsItem then
-                            if itemInSlotBusy ~= false then
-                                FAVORITED_ITEMS[existsItem].slot = clickedSlotNumber
-                                table.remove(FAVORITED_ITEMS, itemInSlotBusy)
-                                GLOBAL.ThePlayer.components.talker:Say(
-                                    tostring(selectedItem.name) .. GetMsg("replaced") .. tostring(clickedSlotNumber))
-                            else
-                                FAVORITED_ITEMS[existsItem].slot = clickedSlotNumber
-                                GLOBAL.ThePlayer.components.talker:Say(
-                                    tostring(selectedItem.name) .. GetMsg("moved") .. tostring(clickedSlotNumber))
-                            end
-                        end
-                    else
-                        if itemInSlotBusy ~= false then
-                            FAVORITED_ITEMS[itemInSlotBusy].item = prefab
-                            GLOBAL.ThePlayer.components.talker:Say(
-                                tostring(selectedItem.name) .. GetMsg("replaced") .. tostring(clickedSlotNumber))
-                        else
-                            table.insert(FAVORITED_ITEMS, { item = prefab, slot = clickedSlotNumber })
-                            GLOBAL.ThePlayer.components.talker:Say(
-                                tostring(selectedItem.name) .. GetMsg("favorited") .. tostring(clickedSlotNumber))
-                        end
-                    end
-
-                    HAVE_FAVORITED = true
-                    GLOBAL.TheSim:SetPersistentString(FAVITSAVE, TableToString(FAVORITED_ITEMS), false)
-                    SendFavorites(true)
-                    RefreshFavoriteMarkers()
+                    SetFavoriteForSlot(prefab, clickedSlotNumber)
                 end
             end
 
@@ -583,6 +669,45 @@ if GLOBAL.TheNet:GetIsClient() then
     end)
 
     if GLOBAL.TheInput ~= nil then
+        GLOBAL.TheInput:AddKeyDownHandler(FAVORITE_KEY, function()
+            if STAR_SELECTION_MODE then return end
+
+            local slot = HOVERED_PLAYER_SLOT
+            local item = slot ~= nil and slot.tile ~= nil and slot.tile.item or nil
+            local player = GLOBAL.ThePlayer
+            if item ~= nil then
+                STAR_SELECTION_MODE = true
+                STAR_SELECTION_PREFAB = item.prefab
+                STAR_BLINK_VISIBLE = true
+                RefreshFavoriteMarkers()
+                StartFavoriteStarBlink()
+                local prompt = SHORTCUT_MESSAGES[GetLang()] or SHORTCUT_MESSAGES.english
+                if player ~= nil and player.components ~= nil and player.components.talker ~= nil then
+                    player.components.talker:Say(string.format(prompt.choose_slot, GetFavoriteDisplayName(item.prefab)))
+                end
+            else
+                STAR_MARKERS_VISIBLE = not STAR_MARKERS_VISIBLE
+                RefreshFavoriteMarkers()
+                local prompt = SHORTCUT_MESSAGES[GetLang()] or SHORTCUT_MESSAGES.english
+                if player ~= nil and player.components ~= nil and player.components.talker ~= nil then
+                    if STAR_MARKERS_VISIBLE then
+                        player.components.talker:Say(prompt.shown)
+                    else
+                        player.components.talker:Say(string.format(prompt.hidden, GetModConfigData("FI_SWITCH_KEY")))
+                    end
+                end
+            end
+        end)
+
+        GLOBAL.TheInput:AddKeyUpHandler(FAVORITE_KEY, function()
+            if STAR_SELECTION_MODE then
+                STAR_SELECTION_MODE = false
+                STAR_SELECTION_PREFAB = nil
+                StopFavoriteStarBlink()
+                RefreshFavoriteMarkers()
+            end
+        end)
+
         GLOBAL.TheInput:AddKeyDownHandler(GLOBAL.KEY_Z, function()
             if GLOBAL.TheInput:IsKeyDown(GLOBAL.KEY_CTRL) and GLOBAL.TheInput:IsKeyDown(GLOBAL.KEY_SHIFT) then
                 HAVE_FAVORITED = false
