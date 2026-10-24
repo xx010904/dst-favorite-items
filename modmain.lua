@@ -768,6 +768,7 @@ if GLOBAL.TheNet:GetIsClient() then
             if STAR_SELECTION_MODE then return end
 
             local slot = HOVERED_PLAYER_SLOT
+            if slot == nil then return end
             local item = slot ~= nil and slot.tile ~= nil and slot.tile.item or nil
             local player = GLOBAL.ThePlayer
             if item ~= nil then
@@ -780,7 +781,7 @@ if GLOBAL.TheNet:GetIsClient() then
                 if player ~= nil and player.components ~= nil and player.components.talker ~= nil then
                     player.components.talker:Say(string.format(prompt.choose_slot, GetFavoriteDisplayName(item.prefab)))
                 end
-            else
+            elseif GLOBAL.TheInput:IsKeyDown(GLOBAL.KEY_CTRL) then
                 STAR_MARKERS_VISIBLE = not STAR_MARKERS_VISIBLE
                 RefreshFavoriteMarkers()
                 local prompt = SHORTCUT_MESSAGES[GetLang()] or SHORTCUT_MESSAGES.english
@@ -788,7 +789,8 @@ if GLOBAL.TheNet:GetIsClient() then
                     if STAR_MARKERS_VISIBLE then
                         player.components.talker:Say(prompt.shown)
                     else
-                        player.components.talker:Say(string.format(prompt.hidden, GetModConfigData("FI_SWITCH_KEY")))
+                        player.components.talker:Say(string.format(prompt.hidden,
+                            "CTRL + " .. GetModConfigData("FI_SWITCH_KEY")))
                     end
                 end
             end

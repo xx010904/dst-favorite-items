@@ -11,7 +11,7 @@ description = ChooseTranslationTable({
 Favorite your items and keep them locked to the slots you choose.
 
 How to use:
-    - Press the favorite key (default V) over an empty slot to hide or show favorite stars.
+    - Hold CTRL + the favorite key (default CTRL + V) over an empty slot to hide or show favorite stars.
     - Hold the favorite key over an item slot, then click the slot where you want to lock the item.
     - Left-click a favorite star to move one stack from your equipped backpack or an open container into that slot.
     - Right-click a favorite star and confirm to remove its marker.
@@ -24,7 +24,7 @@ How to use:
 收藏物品，让它们固定在你选择的物品栏槽位中。
 
 使用方法：
-    - 在空槽位上按收藏键（默认 V），可隐藏或显示所有收藏星星。
+    - 在空槽位上按住 CTRL + 收藏键（默认 CTRL + V），可隐藏或显示所有收藏星星。
     - 将鼠标移到物品槽位并按住收藏键，然后点击要锁定到的槽位。
     - 左键点击收藏星星，可从装备的背包或当前打开的容器中移入一组物品。
     - 右键点击收藏星星，并确认移除该槽位的标记。
@@ -37,7 +37,7 @@ How to use:
 收藏物品，讓它們固定在你選擇的物品欄欄位中。
 
 使用方法：
-    - 在空欄位上按收藏鍵（預設 V），可隱藏或顯示所有收藏星星。
+    - 在空欄位上按住 CTRL + 收藏鍵（預設 CTRL + V），可隱藏或顯示所有收藏星星。
     - 將滑鼠移到物品欄位並按住收藏鍵，然後點擊要鎖定的欄位。
     - 左鍵點擊收藏星星，可從裝備的背包或目前開啟的容器移入一組物品。
     - 右鍵點擊收藏星星，並確認移除該欄位的標記。
@@ -50,7 +50,7 @@ How to use:
 收藏物品，让它们固定在你选择的物品栏槽位中。
 
 使用方法：
-    - 在空槽位上按收藏键（默认 V），可隐藏或显示所有收藏星星。
+    - 在空槽位上按住 CTRL + 收藏键（默认 CTRL + V），可隐藏或显示所有收藏星星。
     - 将鼠标移到物品槽位并按住收藏键，然后点击要锁定到的槽位。
     - 左键点击收藏星星，可从装备的背包或当前打开的容器中移入一组物品。
     - 右键点击收藏星星，并确认移除该槽位的标记。
