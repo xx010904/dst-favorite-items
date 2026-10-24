@@ -306,6 +306,7 @@ end
 if GLOBAL.TheNet:GetIsClient() then
     local ImageButton = require("widgets/imagebutton")
     local Text = require("widgets/text")
+    local FAVORITE_MARKER_FONT = GLOBAL.NEWFONT_OUTLINE or "spirequal_outline"
     local FAVORITED_ITEMS = {}
     local HAVE_FAVORITED = false
     local FAVITSAVE = "FAVORITEITEMS"
@@ -343,7 +344,7 @@ if GLOBAL.TheNet:GetIsClient() then
         marker.move_on_click = false
         marker.focus_sound = nil
         marker:SetPosition(25, 47) -- centered outside the slot, above its top-right corner
-        marker.star = marker:AddChild(Text(NEWFONT_OUTLINE, 20, "★"))
+        marker.star = marker:AddChild(Text(FAVORITE_MARKER_FONT, 20, "★"))
         marker.star:SetColour(1, 0.82, 0.2, 0.58)
         marker:SetOnClick(function() end)
         marker:Hide()
@@ -373,7 +374,7 @@ if GLOBAL.TheNet:GetIsClient() then
             local favorite = IsPlayerInventorySlot(invslot) and GetFavoriteForSlot(invslot.num) or nil
             if favorite ~= nil then
                 marker:SetHoverText(GetFavoriteDisplayName(favorite.item), {
-                    font = NEWFONT_OUTLINE,
+                    font = FAVORITE_MARKER_FONT,
                     font_size = 22,
                     attach_to_parent = invslot,
                     offset_x = 0,
