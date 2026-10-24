@@ -338,14 +338,19 @@ if GLOBAL.TheNet:GetIsClient() then
             return invslot.favorite_marker
         end
 
-        local marker = invslot:AddChild(ImageButton("images/ui.xml", "blank.tex"))
-        marker:ForceImageSize(18, 18)
+        local parent = invslot:GetParent()
+        if parent == nil then return nil end
+
+        local slot_x, slot_y = invslot:GetPositionXYZ()
+        local _, slot_height = invslot.bgimage:GetSize()
+        local marker = parent:AddChild(ImageButton("images/ui.xml", "blank.tex"))
+        marker:ForceImageSize(32, 32)
         marker.image:SetTint(0, 0, 0, 0)
         marker.scale_on_focus = false
         marker.move_on_click = false
         marker.focus_sound = nil
-        marker:SetPosition(25, 47) -- centered outside the slot, above its top-right corner
-        marker.star = marker:AddChild(Text(FAVORITE_MARKER_FONT, 20, "★"))
+        marker:SetPosition(slot_x, slot_y + slot_height * 0.5 + 20) -- centered above the slot, outside its bounds
+        marker.star = marker:AddChild(Text(FAVORITE_MARKER_FONT, 40, "★"))
         marker.star:SetColour(1, 0.82, 0.2, 0.58)
         marker:SetOnClick(function() end)
         marker:Hide()
@@ -356,7 +361,7 @@ if GLOBAL.TheNet:GetIsClient() then
             if self.favorite_marker_base_gain ~= nil then
                 self.favorite_marker_base_gain(self)
             end
-            self.star:SetScale(1.35)
+            self.star:SetScale(1.3)
             self.star:SetColour(1, 0.9, 0.3, 1)
         end
         marker.OnLoseFocus = function(self)
@@ -372,18 +377,20 @@ if GLOBAL.TheNet:GetIsClient() then
     local function RefreshFavoriteMarkers()
         for invslot in pairs(FAVORITE_SLOT_WIDGETS) do
             local marker = invslot.favorite_marker
-            local favorite = IsPlayerInventorySlot(invslot) and GetFavoriteForSlot(invslot.num) or nil
-            if favorite ~= nil then
-                marker:SetHoverText(GetFavoriteDisplayName(favorite.item), {
-                    font = FAVORITE_MARKER_FONT,
-                    font_size = 22,
-                    attach_to_parent = invslot,
-                    offset_x = 0,
-                    offset_y = 24,
-                })
-                marker:Show()
-            else
-                marker:Hide()
+            if marker ~= nil then
+                local favorite = IsPlayerInventorySlot(invslot) and GetFavoriteForSlot(invslot.num) or nil
+                if favorite ~= nil then
+                    marker:SetHoverText(GetFavoriteDisplayName(favorite.item), {
+                        font = FAVORITE_MARKER_FONT,
+                        font_size = 22,
+                        attach_to_parent = marker,
+                        offset_x = 0,
+                        offset_y = 28,
+                    })
+                    marker:Show()
+                else
+                    marker:Hide()
+                end
             end
         end
     end
@@ -441,9 +448,15 @@ if GLOBAL.TheNet:GetIsClient() then
 
     AddClassPostConstruct("widgets/invslot", function(invslot)
         if IsPlayerInventorySlot(invslot) then
-            invslot.favorite_marker = CreateFavoriteMarker(invslot)
             FAVORITE_SLOT_WIDGETS[invslot] = true
-            RefreshFavoriteMarkers()
+            invslot.inst:DoTaskInTime(0, function()
+                if invslot.inst:IsValid() and invslot:GetParent() ~= nil then
+                    invslot.favorite_marker = CreateFavoriteMarker(invslot)
+                    RefreshFavoriteMarkers()
+                else
+                    FAVORITE_SLOT_WIDGETS[invslot] = nil
+                end
+            end)
             SendFavorites()
         end
 
