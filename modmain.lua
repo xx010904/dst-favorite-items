@@ -413,7 +413,7 @@ if GLOBAL.TheNet:GetIsClient() then
                 if favorite ~= nil then
                     marker:SetHoverText(GetFavoriteDisplayName(favorite.item), {
                         font = FAVORITE_MARKER_FONT,
-                        font_size = 22,
+                        font_size = 44,
                         attach_to_parent = marker,
                         offset_x = 0,
                         offset_y = 28,
