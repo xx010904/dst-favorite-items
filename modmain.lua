@@ -126,9 +126,29 @@ local MESSAGES = {
     },
 }
 
+local LANGUAGE_BY_LOCALE = {
+    en = "english",
+    fr = "french",
+    es = "spanish",
+    mex = "spanish",
+    de = "german",
+    it = "italian",
+    pt = "portuguese_br",
+    pt_br = "portuguese_br",
+    ["pt-br"] = "portuguese_br",
+    pl = "polish",
+    ru = "russian",
+    ko = "korean",
+    zh = "schinese",
+    zhr = "schinese",
+    zht = "tchinese",
+    ja = "japanese",
+}
+
 local function GetLang()
     if GLOBAL.LanguageTranslator and GLOBAL.LanguageTranslator.defaultlang then
-        return GLOBAL.LanguageTranslator.defaultlang
+        local lang = string.lower(GLOBAL.LanguageTranslator.defaultlang)
+        return LANGUAGE_BY_LOCALE[lang] or lang
     end
     return "english"
 end
@@ -195,9 +215,9 @@ end
 -- 服务器权威重组
 -- ---------------------------------------------------------------------------
 local function Reorganize(player, favorites)
-    if player == nil or player.components == nil or player.components.inventory == nil then return end
+    if player == nil or player.components == nil or player.components.inventory == nil then return true end
     local inv = player.components.inventory
-    if inv:GetActiveItem() ~= nil then return end  -- 手上有东西时不打扰
+    if inv:GetActiveItem() ~= nil then return false end -- retry after the active item is placed
 
     for _, f in ipairs(favorites) do
         local slot = f.slot
@@ -222,6 +242,7 @@ local function Reorganize(player, favorites)
             end
         end
     end
+    return true
 end
 
 -- ---------------------------------------------------------------------------
@@ -248,14 +269,23 @@ if GLOBAL.TheWorld and GLOBAL.TheWorld.ismastersim then
         if inst:HasTag("player") then
             local function onInv()
                 if inst.userid == nil then return end
-                if mod_fav._pending[inst.userid] then return end
-                mod_fav._pending[inst.userid] = true
-                inst:DoTaskInTime(0.2, function()
-                    mod_fav._pending[inst.userid] = nil
-                    local favs = mod_fav.favs[inst.userid]
-                    if favs and #favs > 0 then
-                        Reorganize(inst, favs)
+                local userid = inst.userid
+                if mod_fav._pending[userid] then return end
+                mod_fav._pending[userid] = true
+
+                local function reconcile(retries_left)
+                    local favs = mod_fav.favs[userid]
+                    if favs and #favs > 0 and not Reorganize(inst, favs) and retries_left > 0 then
+                        inst:DoTaskInTime(0.2, function()
+                            reconcile(retries_left - 1)
+                        end)
+                        return
                     end
+                    mod_fav._pending[userid] = nil
+                end
+
+                inst:DoTaskInTime(0.2, function()
+                    reconcile(10)
                 end)
             end
             inst:ListenForEvent("itemget", onInv)
@@ -274,13 +304,97 @@ end
 --   负责: 输入捕获 / 收藏表维护 / 本地存档 / 按玩家语言显示提示 / 发 RPC 给服务器
 -- ---------------------------------------------------------------------------
 if GLOBAL.TheNet:GetIsClient() then
+    local ImageButton = require("widgets/imagebutton")
+    local Text = require("widgets/text")
     local FAVORITED_ITEMS = {}
     local HAVE_FAVORITED = false
     local FAVITSAVE = "FAVORITEITEMS"
+    local FAVORITE_SLOT_WIDGETS = {}
+    local FAVORITES_SYNC_PENDING = true
 
-    local function SendFavorites()
-        if GLOBAL.ThePlayer == nil then return end
+    local function GetFavoriteForSlot(slot_number)
+        for _, favorite in ipairs(FAVORITED_ITEMS) do
+            if favorite.slot == slot_number then
+                return favorite
+            end
+        end
+    end
+
+    local function GetFavoriteDisplayName(prefab)
+        local names = GLOBAL.STRINGS and GLOBAL.STRINGS.NAMES
+        return names and names[string.upper(prefab)] or prefab
+    end
+
+    local function IsPlayerInventorySlot(invslot)
+        local player = GLOBAL.ThePlayer
+        return player ~= nil and player.replica ~= nil and player.replica.inventory ~= nil
+            and tostring(invslot.container) == tostring(player.replica.inventory)
+    end
+
+    local function CreateFavoriteMarker(invslot)
+        if invslot.favorite_marker ~= nil then
+            return invslot.favorite_marker
+        end
+
+        local marker = invslot:AddChild(ImageButton("images/ui.xml", "blank.tex"))
+        marker:ForceImageSize(18, 18)
+        marker.image:SetTint(0, 0, 0, 0)
+        marker.scale_on_focus = false
+        marker.move_on_click = false
+        marker.focus_sound = nil
+        marker:SetPosition(25, 47) -- centered outside the slot, above its top-right corner
+        marker.star = marker:AddChild(Text(NEWFONT_OUTLINE, 20, "★"))
+        marker.star:SetColour(1, 0.82, 0.2, 0.58)
+        marker:SetOnClick(function() end)
+        marker:Hide()
+        invslot.favorite_marker = marker
+        marker.favorite_marker_base_gain = marker.OnGainFocus
+        marker.favorite_marker_base_lose = marker.OnLoseFocus
+        marker.OnGainFocus = function(self)
+            if self.favorite_marker_base_gain ~= nil then
+                self.favorite_marker_base_gain(self)
+            end
+            self.star:SetScale(1.35)
+            self.star:SetColour(1, 0.9, 0.3, 1)
+        end
+        marker.OnLoseFocus = function(self)
+            if self.favorite_marker_base_lose ~= nil then
+                self.favorite_marker_base_lose(self)
+            end
+            self.star:SetScale(1)
+            self.star:SetColour(1, 0.82, 0.2, 0.58)
+        end
+        return marker
+    end
+
+    local function RefreshFavoriteMarkers()
+        for invslot in pairs(FAVORITE_SLOT_WIDGETS) do
+            local marker = invslot.favorite_marker
+            local favorite = IsPlayerInventorySlot(invslot) and GetFavoriteForSlot(invslot.num) or nil
+            if favorite ~= nil then
+                marker:SetHoverText(GetFavoriteDisplayName(favorite.item), {
+                    font = NEWFONT_OUTLINE,
+                    font_size = 22,
+                    attach_to_parent = invslot,
+                    offset_x = 0,
+                    offset_y = 24,
+                })
+                marker:Show()
+            else
+                marker:Hide()
+            end
+        end
+    end
+
+    local function SendFavorites(force)
+        if not HAVE_FAVORITED then return end
+        if GLOBAL.ThePlayer == nil then
+            FAVORITES_SYNC_PENDING = true
+            return
+        end
+        if not force and not FAVORITES_SYNC_PENDING then return end
         SendModRPCToServer(GetModRPC(MOD_RPC, "SetFavorites"), TableToString(FAVORITED_ITEMS))
+        FAVORITES_SYNC_PENDING = false
     end
 
     local function SendClear()
@@ -296,9 +410,17 @@ if GLOBAL.TheNet:GetIsClient() then
                 SendFavorites()
             end
         end
+        RefreshFavoriteMarkers()
     end)
 
     AddClassPostConstruct("widgets/invslot", function(invslot)
+        if IsPlayerInventorySlot(invslot) then
+            invslot.favorite_marker = CreateFavoriteMarker(invslot)
+            FAVORITE_SLOT_WIDGETS[invslot] = true
+            RefreshFavoriteMarkers()
+            SendFavorites()
+        end
+
         local oldClick = invslot.Click
         invslot.Click = function(invslot, stack_mod)
             local res = oldClick(invslot, stack_mod)
@@ -347,7 +469,8 @@ if GLOBAL.TheNet:GetIsClient() then
 
                     HAVE_FAVORITED = true
                     GLOBAL.TheSim:SetPersistentString(FAVITSAVE, TableToString(FAVORITED_ITEMS), false)
-                    SendFavorites()
+                    SendFavorites(true)
+                    RefreshFavoriteMarkers()
                 end
             end
 
@@ -362,6 +485,7 @@ if GLOBAL.TheNet:GetIsClient() then
                 FAVORITED_ITEMS = {}
                 GLOBAL.TheSim:ErasePersistentString(FAVITSAVE)
                 SendClear()
+                RefreshFavoriteMarkers()
                 if GLOBAL.ThePlayer and GLOBAL.ThePlayer.components and GLOBAL.ThePlayer.components.talker then
                     GLOBAL.ThePlayer.components.talker:Say(GetMsg("cleared"))
                 end
