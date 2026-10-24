@@ -129,21 +129,6 @@ local MESSAGES = {
     },
 }
 
-local REMOVE_CONFIRM_MESSAGES = {
-    english = { title = "Remove favorite?", body = "Remove %s from favorites?", yes = "Remove", no = "Cancel" },
-    schinese = { title = "移除收藏？", body = "确定移除 %s 的槽位收藏标记吗？", yes = "移除", no = "取消" },
-    tchinese = { title = "移除收藏？", body = "確定移除 %s 的欄位收藏標記嗎？", yes = "移除", no = "取消" },
-    russian = { title = "Убрать из избранного?", body = "Убрать отметку избранного для «%s»?", yes = "Убрать", no = "Отмена" },
-    german = { title = "Favorit entfernen?", body = "Favoritenmarkierung für %s entfernen?", yes = "Entfernen", no = "Abbrechen" },
-    french = { title = "Retirer des favoris ?", body = "Retirer la marque de favori de %s ?", yes = "Retirer", no = "Annuler" },
-    spanish = { title = "¿Quitar de favoritos?", body = "¿Quitar la marca de favorito de %s?", yes = "Quitar", no = "Cancelar" },
-    portuguese_br = { title = "Remover dos favoritos?", body = "Remover a marca de favorito de %s?", yes = "Remover", no = "Cancelar" },
-    korean = { title = "즐겨찾기를 삭제할까요?", body = "%s의 즐겨찾기 표시를 삭제할까요?", yes = "삭제", no = "취소" },
-    japanese = { title = "お気に入りを解除しますか？", body = "「%s」のお気に入りマークを解除しますか？", yes = "解除", no = "キャンセル" },
-    italian = { title = "Rimuovere dai preferiti?", body = "Rimuovere il contrassegno preferito di %s?", yes = "Rimuovi", no = "Annulla" },
-    polish = { title = "Usunąć z ulubionych?", body = "Usunąć oznaczenie ulubionego przedmiotu %s?", yes = "Usuń", no = "Anuluj" },
-}
-
 local SHORTCUT_MESSAGES = {
     english = { hidden = "Favorite stars hidden. Press %s again to show them.", shown = "Favorite stars shown.", choose_slot = "Choose a slot to lock %s to." },
     schinese = { hidden = "星星已隐藏，再按 %s 显示。", shown = "星星已显示。", choose_slot = "选择一个槽位来锁定%s。" },
@@ -289,90 +274,6 @@ AddModRPCHandler(MOD_RPC, "SetFavorites", function(player, data)
     Reorganize(player, tbl)
 end)
 
-local function FindItemInContainer(container, prefab)
-    if container == nil or container.readonlycontainer or container.GetNumSlots == nil then
-        return nil, nil
-    end
-    for slot = 1, container:GetNumSlots() do
-        local item = container:GetItemInSlot(slot)
-        if item ~= nil and item.prefab == prefab then
-            return item, slot
-        end
-    end
-    return nil, nil
-end
-
-AddModRPCHandler(MOD_RPC, "PullFavoriteItem", function(player, slot_number)
-    if player == nil or player.userid == nil or type(slot_number) ~= "number"
-        or slot_number ~= math.floor(slot_number) then
-        return
-    end
-
-    local inv = player.components ~= nil and player.components.inventory or nil
-    local favorites = mod_fav.favs[player.userid]
-    if inv == nil or favorites == nil or slot_number < 1 or slot_number > inv:GetNumSlots()
-        or inv:GetActiveItem() ~= nil then
-        return
-    end
-
-    local prefab
-    for _, favorite in ipairs(favorites) do
-        if favorite.slot == slot_number then
-            prefab = favorite.item
-            break
-        end
-    end
-    if prefab == nil then return end
-
-    local current = inv:GetItemInSlot(slot_number)
-    if current ~= nil and current.prefab == prefab then return end
-
-    local source, source_slot, item = nil, nil, nil
-    local overflow = inv:GetOverflowContainer()
-    item, source_slot = FindItemInContainer(overflow, prefab)
-    if item ~= nil then
-        source = overflow
-    else
-        for container_inst in pairs(inv.opencontainers or {}) do
-            local container = container_inst.components ~= nil
-                and (container_inst.components.container or container_inst.components.inventory)
-                or nil
-            if container ~= overflow and not (container and container.excludefromcrafting) then
-                item, source_slot = FindItemInContainer(container, prefab)
-                if item ~= nil then
-                    source = container
-                    break
-                end
-            end
-        end
-    end
-    if item == nil or source == nil or not inv:CanTakeItemInSlot(item, slot_number) then return end
-
-    -- Move one whole stack from the source container into the favorite slot.
-    item = source:RemoveItemBySlot(source_slot)
-    if item == nil then return end
-
-    local displaced = inv:RemoveItemBySlot(slot_number)
-    if displaced ~= nil then
-        if not source:CanTakeItemInSlot(displaced, source_slot)
-            or not source:GiveItem(displaced, source_slot, nil, false) then
-            inv:GiveItem(displaced, slot_number)
-            source:GiveItem(item, source_slot, nil, false)
-            return
-        end
-    end
-
-    if inv:GiveItem(item, slot_number) == nil then
-        if displaced ~= nil then
-            local restore = source:RemoveItemBySlot(source_slot)
-            if restore ~= nil then inv:GiveItem(restore, slot_number) end
-        end
-        source:GiveItem(item, source_slot, nil, false)
-        return
-    end
-
-end)
-
 AddModRPCHandler(MOD_RPC, "ClearFavorites", function(player)
     if player == nil or player.userid == nil then return end
     mod_fav.favs[player.userid] = {}
@@ -423,7 +324,6 @@ end
 if GLOBAL.TheNet:GetIsClient() then
     local ImageButton = require("widgets/imagebutton")
     local Text = require("widgets/text")
-    local PopupDialogScreen = require("screens/redux/popupdialog")
     local FAVORITE_MARKER_FONT = GLOBAL.NEWFONT_OUTLINE or "spirequal_outline"
     local FAVORITE_KEY = GetModConfigData("FI_SWITCH_KEY"):lower():byte()
     local FAVORITED_ITEMS = {}
@@ -451,9 +351,6 @@ if GLOBAL.TheNet:GetIsClient() then
         local names = GLOBAL.STRINGS and GLOBAL.STRINGS.NAMES
         return names and names[string.upper(prefab)] or prefab
     end
-
-    local ShowRemoveFavoriteConfirmation
-    local RequestPullFavoriteItem
 
     local function IsPlayerInventorySlot(invslot)
         local player = GLOBAL.ThePlayer
@@ -516,11 +413,7 @@ if GLOBAL.TheNet:GetIsClient() then
         marker:SetPosition(slot_x, slot_y + slot_height * 0.5 + 24) -- centered above the slot, slightly lower
         marker.star = marker:AddChild(Text(FAVORITE_MARKER_FONT, 30, "★"))
         marker.star:SetColour(1, 0.82, 0.2, 0.58)
-        marker:SetOnClick(function()
-            if RequestPullFavoriteItem ~= nil then
-                RequestPullFavoriteItem(invslot.num)
-            end
-        end)
+        marker:SetOnClick(function() end)
         marker:Hide()
         invslot.favorite_marker = marker
         marker.favorite_marker_base_gain = marker.OnGainFocus
@@ -536,16 +429,6 @@ if GLOBAL.TheNet:GetIsClient() then
                 self.favorite_marker_base_lose(self)
             end
             UpdateFavoriteStarAppearance(self)
-        end
-        local oldOnControl = marker.OnControl
-        marker.OnControl = function(self, control, down)
-            if control == GLOBAL.CONTROL_SECONDARY then
-                if down and ShowRemoveFavoriteConfirmation ~= nil then
-                    ShowRemoveFavoriteConfirmation(invslot.num)
-                end
-                return true
-            end
-            return oldOnControl(self, control, down)
         end
         return marker
     end
@@ -592,12 +475,6 @@ if GLOBAL.TheNet:GetIsClient() then
         SendModRPCToServer(GetModRPC(MOD_RPC, "ClearFavorites"))
     end
 
-    RequestPullFavoriteItem = function(slot_number)
-        if GetFavoriteForSlot(slot_number) ~= nil then
-            SendModRPCToServer(GetModRPC(MOD_RPC, "PullFavoriteItem"), slot_number)
-        end
-    end
-
     local function SetFavoriteForSlot(prefab, slot_number)
         if prefab == nil then return false end
 
@@ -606,13 +483,17 @@ if GLOBAL.TheNet:GetIsClient() then
         local message_key
 
         if item_index ~= false then
-            if slot_index == item_index then return false end
-            FAVORITED_ITEMS[item_index].slot = slot_number
-            if slot_index ~= false then
-                table.remove(FAVORITED_ITEMS, slot_index)
-                message_key = "replaced"
+            if slot_index == item_index then
+                table.remove(FAVORITED_ITEMS, item_index)
+                message_key = "removed"
             else
-                message_key = "moved"
+                FAVORITED_ITEMS[item_index].slot = slot_number
+                if slot_index ~= false then
+                    table.remove(FAVORITED_ITEMS, slot_index)
+                    message_key = "replaced"
+                else
+                    message_key = "moved"
+                end
             end
         elseif slot_index ~= false then
             FAVORITED_ITEMS[slot_index].item = prefab
@@ -629,47 +510,13 @@ if GLOBAL.TheNet:GetIsClient() then
 
         local player = GLOBAL.ThePlayer
         if player ~= nil and player.components ~= nil and player.components.talker ~= nil then
-            player.components.talker:Say(GetFavoriteDisplayName(prefab) .. GetMsg(message_key) .. tostring(slot_number))
+            local message = GetFavoriteDisplayName(prefab) .. GetMsg(message_key) .. tostring(slot_number)
+            if message_key == "removed" then
+                message = message .. GetMsg("removed_suffix")
+            end
+            player.components.talker:Say(message)
         end
         return true
-    end
-
-    ShowRemoveFavoriteConfirmation = function(slot_number)
-        local favorite = GetFavoriteForSlot(slot_number)
-        if favorite == nil then return end
-
-        local prompt = REMOVE_CONFIRM_MESSAGES[GetLang()] or REMOVE_CONFIRM_MESSAGES.english
-        local body = string.format(prompt.body, GetFavoriteDisplayName(favorite.item))
-        local popup = PopupDialogScreen(prompt.title, body, {
-            {
-                text = prompt.yes,
-                cb = function()
-                    GLOBAL.TheFrontEnd:PopScreen()
-                    local index = SlotIsBusy(FAVORITED_ITEMS, slot_number)
-                    if index ~= false then
-                        local removed_prefab = FAVORITED_ITEMS[index].item
-                        table.remove(FAVORITED_ITEMS, index)
-                        HAVE_FAVORITED = true
-                        GLOBAL.TheSim:SetPersistentString(FAVITSAVE, TableToString(FAVORITED_ITEMS), false)
-                        SendFavorites(true)
-                        HAVE_FAVORITED = #FAVORITED_ITEMS > 0
-                        RefreshFavoriteMarkers()
-                        local player = GLOBAL.ThePlayer
-                        if player ~= nil and player.components ~= nil and player.components.talker ~= nil then
-                            player.components.talker:Say(GetFavoriteDisplayName(removed_prefab)
-                                .. GetMsg("removed") .. tostring(slot_number) .. GetMsg("removed_suffix"))
-                        end
-                    end
-                end,
-            },
-            {
-                text = prompt.no,
-                cb = function()
-                    GLOBAL.TheFrontEnd:PopScreen()
-                end,
-            },
-        }, nil, "small", "dark")
-        GLOBAL.TheFrontEnd:PushScreen(popup)
     end
 
     -- The server may not have received the saved favorite table yet when the
