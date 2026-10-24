@@ -130,18 +130,18 @@ local MESSAGES = {
 }
 
 local SHORTCUT_MESSAGES = {
-    english = { choose_slot = "Choose a slot to lock %s to." },
-    schinese = { choose_slot = "选择一个槽位来锁定%s。" },
-    tchinese = { choose_slot = "選擇一個欄位來鎖定%s。" },
-    russian = { choose_slot = "Выберите слот для закрепления предмета «%s»." },
-    german = { choose_slot = "Wähle einen Platz für %s." },
-    french = { choose_slot = "Choisissez un emplacement pour verrouiller %s." },
-    spanish = { choose_slot = "Elige una casilla para fijar %s." },
-    portuguese_br = { choose_slot = "Escolha um espaço para fixar %s." },
-    korean = { choose_slot = "%s을(를) 고정할 슬롯을 선택하세요." },
-    japanese = { choose_slot = "%sを固定するスロットを選んでください。" },
-    italian = { choose_slot = "Scegli uno slot in cui bloccare %s." },
-    polish = { choose_slot = "Wybierz miejsce do przypięcia przedmiotu %s." },
+    english = { hidden = "Favorite stars hidden. Press %s again to show them.", shown = "Favorite stars shown.", choose_slot = "Choose a slot to lock %s to." },
+    schinese = { hidden = "星星已隐藏，再按 %s 显示。", shown = "星星已显示。", choose_slot = "选择一个槽位来锁定%s。" },
+    tchinese = { hidden = "星星已隱藏，再按 %s 顯示。", shown = "星星已顯示。", choose_slot = "選擇一個欄位來鎖定%s。" },
+    russian = { hidden = "Звёзды избранного скрыты. Нажмите %s ещё раз, чтобы показать их.", shown = "Звёзды избранного показаны.", choose_slot = "Выберите слот для закрепления предмета «%s»." },
+    german = { hidden = "Favoritensterne ausgeblendet. Drücke %s erneut, um sie anzuzeigen.", shown = "Favoritensterne angezeigt.", choose_slot = "Wähle einen Platz für %s." },
+    french = { hidden = "Étoiles masquées. Appuyez encore sur %s pour les afficher.", shown = "Étoiles affichées.", choose_slot = "Choisissez un emplacement pour verrouiller %s." },
+    spanish = { hidden = "Estrellas ocultas. Pulsa %s otra vez para mostrarlas.", shown = "Estrellas visibles.", choose_slot = "Elige una casilla para fijar %s." },
+    portuguese_br = { hidden = "Estrelas ocultas. Pressione %s novamente para mostrá-las.", shown = "Estrelas visíveis.", choose_slot = "Escolha um espaço para fixar %s." },
+    korean = { hidden = "즐겨찾기 별표를 숨겼습니다. 다시 보려면 %s 키를 누르세요.", shown = "즐겨찾기 별표를 표시했습니다.", choose_slot = "%s을(를) 고정할 슬롯을 선택하세요." },
+    japanese = { hidden = "お気に入りの星を隠しました。もう一度 %s を押すと表示します。", shown = "お気に入りの星を表示しました。", choose_slot = "%sを固定するスロットを選んでください。" },
+    italian = { hidden = "Stelle nascoste. Premi di nuovo %s per mostrarle.", shown = "Stelle visibili.", choose_slot = "Scegli uno slot in cui bloccare %s." },
+    polish = { hidden = "Gwiazdki ukryte. Naciśnij ponownie %s, aby je pokazać.", shown = "Gwiazdki widoczne.", choose_slot = "Wybierz miejsce do przypięcia przedmiotu %s." },
 }
 
 local LANGUAGE_BY_LOCALE = {
@@ -330,6 +330,8 @@ if GLOBAL.TheNet:GetIsClient() then
     local HAVE_FAVORITED = false
     local FAVITSAVE = "FAVORITEITEMS"
     local FAVORITE_SLOT_WIDGETS = {}
+    local HOVERED_PLAYER_SLOT = nil
+    local STAR_MARKERS_VISIBLE = true
     local STAR_SELECTION_MODE = false
     local STAR_SELECTION_PREFAB = nil
     local FAVORITES_SYNC_PENDING = true
@@ -410,7 +412,7 @@ if GLOBAL.TheNet:GetIsClient() then
             local marker = invslot.favorite_marker
             if marker ~= nil then
                 local favorite = IsPlayerInventorySlot(invslot) and GetFavoriteForSlot(invslot.num) or nil
-                if favorite ~= nil then
+                if favorite ~= nil and STAR_MARKERS_VISIBLE then
                     marker:SetHoverText(GetFavoriteDisplayName(favorite.item), {
                         font = FAVORITE_MARKER_FONT,
                         font_size = 44,
@@ -524,6 +526,19 @@ if GLOBAL.TheNet:GetIsClient() then
 
     AddClassPostConstruct("widgets/invslot", function(invslot)
         if IsPlayerInventorySlot(invslot) then
+            local oldOnGainFocus = invslot.OnGainFocus
+            invslot.OnGainFocus = function(self, ...)
+                if oldOnGainFocus ~= nil then oldOnGainFocus(self, ...) end
+                HOVERED_PLAYER_SLOT = self
+            end
+            local oldOnLoseFocus = invslot.OnLoseFocus
+            invslot.OnLoseFocus = function(self, ...)
+                if oldOnLoseFocus ~= nil then oldOnLoseFocus(self, ...) end
+                if HOVERED_PLAYER_SLOT == self then
+                    HOVERED_PLAYER_SLOT = nil
+                end
+            end
+
             FAVORITE_SLOT_WIDGETS[invslot] = true
             invslot.inst:DoTaskInTime(0, function()
                 if invslot.inst:IsValid() and invslot:GetParent() ~= nil then
@@ -565,6 +580,40 @@ if GLOBAL.TheNet:GetIsClient() then
             if STAR_SELECTION_MODE then return end
 
             local player = GLOBAL.ThePlayer
+            local hovered_slot = HOVERED_PLAYER_SLOT
+            local on_player_inventory = hovered_slot ~= nil and IsPlayerInventorySlot(hovered_slot)
+            local ctrl_down = GLOBAL.TheInput:IsKeyDown(GLOBAL.KEY_CTRL)
+            local alt_down = GLOBAL.TheInput:IsKeyDown(GLOBAL.KEY_ALT)
+
+            if on_player_inventory and ctrl_down and alt_down then
+                HAVE_FAVORITED = false
+                FAVORITED_ITEMS = {}
+                GLOBAL.TheSim:ErasePersistentString(FAVITSAVE)
+                SendClear()
+                RefreshFavoriteMarkers()
+                if player ~= nil and player.components ~= nil and player.components.talker ~= nil then
+                    player.components.talker:Say(GetMsg("cleared"))
+                end
+                return
+            end
+
+            if on_player_inventory and ctrl_down then
+                STAR_MARKERS_VISIBLE = not STAR_MARKERS_VISIBLE
+                RefreshFavoriteMarkers()
+                local prompt = SHORTCUT_MESSAGES[GetLang()] or SHORTCUT_MESSAGES.english
+                if player ~= nil and player.components ~= nil and player.components.talker ~= nil then
+                    if STAR_MARKERS_VISIBLE then
+                        player.components.talker:Say(prompt.shown)
+                    else
+                        player.components.talker:Say(string.format(prompt.hidden,
+                            "CTRL + " .. GetModConfigData("FI_SWITCH_KEY")))
+                    end
+                end
+                return
+            end
+
+            if ctrl_down or alt_down then return end
+
             local inventory = player ~= nil and player.replica ~= nil and player.replica.inventory or nil
             local item = inventory ~= nil and inventory:GetActiveItem() or nil
             if item ~= nil then
@@ -581,19 +630,6 @@ if GLOBAL.TheNet:GetIsClient() then
             if STAR_SELECTION_MODE then
                 STAR_SELECTION_MODE = false
                 STAR_SELECTION_PREFAB = nil
-            end
-        end)
-
-        GLOBAL.TheInput:AddKeyDownHandler(GLOBAL.KEY_Z, function()
-            if GLOBAL.TheInput:IsKeyDown(GLOBAL.KEY_CTRL) and GLOBAL.TheInput:IsKeyDown(GLOBAL.KEY_SHIFT) then
-                HAVE_FAVORITED = false
-                FAVORITED_ITEMS = {}
-                GLOBAL.TheSim:ErasePersistentString(FAVITSAVE)
-                SendClear()
-                RefreshFavoriteMarkers()
-                if GLOBAL.ThePlayer and GLOBAL.ThePlayer.components and GLOBAL.ThePlayer.components.talker then
-                    GLOBAL.ThePlayer.components.talker:Say(GetMsg("cleared"))
-                end
             end
         end)
     end
