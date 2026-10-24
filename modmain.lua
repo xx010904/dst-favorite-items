@@ -410,7 +410,7 @@ if GLOBAL.TheNet:GetIsClient() then
         marker.scale_on_focus = false
         marker.move_on_click = false
         marker.focus_sound = nil
-        marker:SetPosition(slot_x, slot_y + slot_height * 0.5 + 24) -- centered above the slot, slightly lower
+        marker:SetPosition(slot_x, slot_y + slot_height * 0.5 + 16) -- centered above the slot, lowered slightly
         marker.star = marker:AddChild(Text(FAVORITE_MARKER_FONT, 30, "★"))
         marker.star:SetColour(1, 0.82, 0.2, 0.58)
         marker:SetOnClick(function() end)
