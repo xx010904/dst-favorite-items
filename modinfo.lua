@@ -96,8 +96,18 @@ configuration_options =
 {
     {
         name = "FI_SWITCH_KEY",
-        label = "Favorite key",
-        hover = "Choose the key you want to use to favorite items.",
+        label = ChooseTranslationTable({
+            [1] = "Favorite key",
+            zh = "收藏快捷键",
+            zht = "收藏快捷鍵",
+            zhr = "收藏快捷键",
+        }),
+        hover = ChooseTranslationTable({
+            [1] = "Hold this key while placing an item to lock it to a slot. Ctrl + this key shows or hides favorite stars; Ctrl + Alt + this key clears all favorite markers.",
+            zh = "拿起物品后按住此键并放入槽位即可锁定。Ctrl + 此键显示或隐藏星星；Ctrl + Alt + 此键清除所有收藏标记。",
+            zht = "拿起物品後按住此鍵並放入欄位即可鎖定。Ctrl + 此鍵顯示或隱藏星星；Ctrl + Alt + 此鍵清除所有收藏標記。",
+            zhr = "拿起物品后按住此键并放入槽位即可锁定。Ctrl + 此键显示或隐藏星星；Ctrl + Alt + 此键清除所有收藏标记。",
+        }),
         options = {
             {description = "R", data = "R"},
             {description = "T", data = "T"},
