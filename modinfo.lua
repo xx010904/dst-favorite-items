@@ -11,8 +11,7 @@ description = ChooseTranslationTable({
 Favorite your items and keep them locked to the slots you choose.
 
 How to use:
-    - Hold CTRL + the favorite key (default CTRL + V) over an empty slot to hide or show favorite stars.
-    - Hold the favorite key over an item slot, then click the slot where you want to lock the item.
+    - Pick up an item with the mouse, hold the favorite key (default V), then click the slot where you drop it to lock it there.
     - Press the favorite key and click the same slot again to remove its favorite marker.
     - Press CTRL + SHIFT + Z to clear all favorite markers.
 
@@ -23,8 +22,7 @@ How to use:
 收藏物品，让它们固定在你选择的物品栏槽位中。
 
 使用方法：
-    - 在空槽位上按住 CTRL + 收藏键（默认 CTRL + V），可隐藏或显示所有收藏星星。
-    - 将鼠标移到物品槽位并按住收藏键，然后点击要锁定到的槽位。
+    - 用鼠标拿起物品，按住收藏键（默认 V），然后点击要放下并锁定物品的槽位。
     - 再次按住收藏键并点击同一槽位，可移除该槽位的收藏标记。
     - 按 CTRL + SHIFT + Z 可清除所有收藏标记。
 
@@ -35,8 +33,7 @@ How to use:
 收藏物品，讓它們固定在你選擇的物品欄欄位中。
 
 使用方法：
-    - 在空欄位上按住 CTRL + 收藏鍵（預設 CTRL + V），可隱藏或顯示所有收藏星星。
-    - 將滑鼠移到物品欄位並按住收藏鍵，然後點擊要鎖定的欄位。
+    - 用滑鼠拿起物品，按住收藏鍵（預設 V），然後點擊要放下並鎖定物品的欄位。
     - 再次按住收藏鍵並點擊同一欄位，可移除該欄位的收藏標記。
     - 按 CTRL + SHIFT + Z 可清除所有收藏標記。
 
@@ -47,8 +44,7 @@ How to use:
 收藏物品，让它们固定在你选择的物品栏槽位中。
 
 使用方法：
-    - 在空槽位上按住 CTRL + 收藏键（默认 CTRL + V），可隐藏或显示所有收藏星星。
-    - 将鼠标移到物品槽位并按住收藏键，然后点击要锁定到的槽位。
+    - 用鼠标拿起物品，按住收藏键（默认 V），然后点击要放下并锁定物品的槽位。
     - 再次按住收藏键并点击同一槽位，可移除该槽位的收藏标记。
     - 按 CTRL + SHIFT + Z 可清除所有收藏标记。
 
