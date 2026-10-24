@@ -289,6 +289,90 @@ AddModRPCHandler(MOD_RPC, "SetFavorites", function(player, data)
     Reorganize(player, tbl)
 end)
 
+local function FindItemInContainer(container, prefab)
+    if container == nil or container.readonlycontainer or container.GetNumSlots == nil then
+        return nil, nil
+    end
+    for slot = 1, container:GetNumSlots() do
+        local item = container:GetItemInSlot(slot)
+        if item ~= nil and item.prefab == prefab then
+            return item, slot
+        end
+    end
+    return nil, nil
+end
+
+AddModRPCHandler(MOD_RPC, "PullFavoriteItem", function(player, slot_number)
+    if player == nil or player.userid == nil or type(slot_number) ~= "number"
+        or slot_number ~= math.floor(slot_number) then
+        return
+    end
+
+    local inv = player.components ~= nil and player.components.inventory or nil
+    local favorites = mod_fav.favs[player.userid]
+    if inv == nil or favorites == nil or slot_number < 1 or slot_number > inv:GetNumSlots()
+        or inv:GetActiveItem() ~= nil then
+        return
+    end
+
+    local prefab
+    for _, favorite in ipairs(favorites) do
+        if favorite.slot == slot_number then
+            prefab = favorite.item
+            break
+        end
+    end
+    if prefab == nil then return end
+
+    local current = inv:GetItemInSlot(slot_number)
+    if current ~= nil and current.prefab == prefab then return end
+
+    local source, source_slot, item = nil, nil, nil
+    local overflow = inv:GetOverflowContainer()
+    item, source_slot = FindItemInContainer(overflow, prefab)
+    if item ~= nil then
+        source = overflow
+    else
+        for container_inst in pairs(inv.opencontainers or {}) do
+            local container = container_inst.components ~= nil
+                and (container_inst.components.container or container_inst.components.inventory)
+                or nil
+            if container ~= overflow and not (container and container.excludefromcrafting) then
+                item, source_slot = FindItemInContainer(container, prefab)
+                if item ~= nil then
+                    source = container
+                    break
+                end
+            end
+        end
+    end
+    if item == nil or source == nil or not inv:CanTakeItemInSlot(item, slot_number) then return end
+
+    -- Move one whole stack from the source container into the favorite slot.
+    item = source:RemoveItemBySlot(source_slot)
+    if item == nil then return end
+
+    local displaced = inv:RemoveItemBySlot(slot_number)
+    if displaced ~= nil then
+        if not source:CanTakeItemInSlot(displaced, source_slot)
+            or not source:GiveItem(displaced, source_slot, nil, false) then
+            inv:GiveItem(displaced, slot_number)
+            source:GiveItem(item, source_slot, nil, false)
+            return
+        end
+    end
+
+    if inv:GiveItem(item, slot_number) == nil then
+        if displaced ~= nil then
+            local restore = source:RemoveItemBySlot(source_slot)
+            if restore ~= nil then inv:GiveItem(restore, slot_number) end
+        end
+        source:GiveItem(item, source_slot, nil, false)
+        return
+    end
+
+end)
+
 AddModRPCHandler(MOD_RPC, "ClearFavorites", function(player)
     if player == nil or player.userid == nil then return end
     mod_fav.favs[player.userid] = {}
@@ -369,6 +453,7 @@ if GLOBAL.TheNet:GetIsClient() then
     end
 
     local ShowRemoveFavoriteConfirmation
+    local RequestPullFavoriteItem
 
     local function IsPlayerInventorySlot(invslot)
         local player = GLOBAL.ThePlayer
@@ -431,7 +516,11 @@ if GLOBAL.TheNet:GetIsClient() then
         marker:SetPosition(slot_x, slot_y + slot_height * 0.5 + 24) -- centered above the slot, slightly lower
         marker.star = marker:AddChild(Text(FAVORITE_MARKER_FONT, 30, "★"))
         marker.star:SetColour(1, 0.82, 0.2, 0.58)
-        marker:SetOnClick(function() end)
+        marker:SetOnClick(function()
+            if RequestPullFavoriteItem ~= nil then
+                RequestPullFavoriteItem(invslot.num)
+            end
+        end)
         marker:Hide()
         invslot.favorite_marker = marker
         marker.favorite_marker_base_gain = marker.OnGainFocus
@@ -501,6 +590,12 @@ if GLOBAL.TheNet:GetIsClient() then
 
     local function SendClear()
         SendModRPCToServer(GetModRPC(MOD_RPC, "ClearFavorites"))
+    end
+
+    RequestPullFavoriteItem = function(slot_number)
+        if GetFavoriteForSlot(slot_number) ~= nil then
+            SendModRPCToServer(GetModRPC(MOD_RPC, "PullFavoriteItem"), slot_number)
+        end
     end
 
     local function SetFavoriteForSlot(prefab, slot_number)
