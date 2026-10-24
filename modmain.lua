@@ -126,6 +126,21 @@ local MESSAGES = {
     },
 }
 
+local REMOVE_CONFIRM_MESSAGES = {
+    english = { title = "Remove favorite?", body = "Remove %s from favorites?", yes = "Remove", no = "Cancel" },
+    schinese = { title = "移除收藏？", body = "确定移除 %s 的槽位收藏标记吗？", yes = "移除", no = "取消" },
+    tchinese = { title = "移除收藏？", body = "確定移除 %s 的欄位收藏標記嗎？", yes = "移除", no = "取消" },
+    russian = { title = "Убрать из избранного?", body = "Убрать отметку избранного для «%s»?", yes = "Убрать", no = "Отмена" },
+    german = { title = "Favorit entfernen?", body = "Favoritenmarkierung für %s entfernen?", yes = "Entfernen", no = "Abbrechen" },
+    french = { title = "Retirer des favoris ?", body = "Retirer la marque de favori de %s ?", yes = "Retirer", no = "Annuler" },
+    spanish = { title = "¿Quitar de favoritos?", body = "¿Quitar la marca de favorito de %s?", yes = "Quitar", no = "Cancelar" },
+    portuguese_br = { title = "Remover dos favoritos?", body = "Remover a marca de favorito de %s?", yes = "Remover", no = "Cancelar" },
+    korean = { title = "즐겨찾기를 삭제할까요?", body = "%s의 즐겨찾기 표시를 삭제할까요?", yes = "삭제", no = "취소" },
+    japanese = { title = "お気に入りを解除しますか？", body = "「%s」のお気に入りマークを解除しますか？", yes = "解除", no = "キャンセル" },
+    italian = { title = "Rimuovere dai preferiti?", body = "Rimuovere il contrassegno preferito di %s?", yes = "Rimuovi", no = "Annulla" },
+    polish = { title = "Usunąć z ulubionych?", body = "Usunąć oznaczenie ulubionego przedmiotu %s?", yes = "Usuń", no = "Anuluj" },
+}
+
 local LANGUAGE_BY_LOCALE = {
     en = "english",
     fr = "french",
@@ -306,6 +321,7 @@ end
 if GLOBAL.TheNet:GetIsClient() then
     local ImageButton = require("widgets/imagebutton")
     local Text = require("widgets/text")
+    local PopupDialogScreen = require("screens/redux/popupdialog")
     local FAVORITE_MARKER_FONT = GLOBAL.NEWFONT_OUTLINE or "spirequal_outline"
     local FAVORITED_ITEMS = {}
     local HAVE_FAVORITED = false
@@ -326,6 +342,8 @@ if GLOBAL.TheNet:GetIsClient() then
         local names = GLOBAL.STRINGS and GLOBAL.STRINGS.NAMES
         return names and names[string.upper(prefab)] or prefab
     end
+
+    local ShowRemoveFavoriteConfirmation
 
     local function IsPlayerInventorySlot(invslot)
         local player = GLOBAL.ThePlayer
@@ -349,8 +367,8 @@ if GLOBAL.TheNet:GetIsClient() then
         marker.scale_on_focus = false
         marker.move_on_click = false
         marker.focus_sound = nil
-        marker:SetPosition(slot_x, slot_y + slot_height * 0.5 + 20) -- centered above the slot, outside its bounds
-        marker.star = marker:AddChild(Text(FAVORITE_MARKER_FONT, 40, "★"))
+        marker:SetPosition(slot_x, slot_y + slot_height * 0.5 + 24) -- centered above the slot, slightly lower
+        marker.star = marker:AddChild(Text(FAVORITE_MARKER_FONT, 30, "★"))
         marker.star:SetColour(1, 0.82, 0.2, 0.58)
         marker:SetOnClick(function() end)
         marker:Hide()
@@ -370,6 +388,16 @@ if GLOBAL.TheNet:GetIsClient() then
             end
             self.star:SetScale(1)
             self.star:SetColour(1, 0.82, 0.2, 0.58)
+        end
+        local oldOnControl = marker.OnControl
+        marker.OnControl = function(self, control, down)
+            if control == GLOBAL.CONTROL_SECONDARY then
+                if down and ShowRemoveFavoriteConfirmation ~= nil then
+                    ShowRemoveFavoriteConfirmation(invslot.num)
+                end
+                return true
+            end
+            return oldOnControl(self, control, down)
         end
         return marker
     end
@@ -408,6 +436,38 @@ if GLOBAL.TheNet:GetIsClient() then
 
     local function SendClear()
         SendModRPCToServer(GetModRPC(MOD_RPC, "ClearFavorites"))
+    end
+
+    ShowRemoveFavoriteConfirmation = function(slot_number)
+        local favorite = GetFavoriteForSlot(slot_number)
+        if favorite == nil then return end
+
+        local prompt = REMOVE_CONFIRM_MESSAGES[GetLang()] or REMOVE_CONFIRM_MESSAGES.english
+        local body = string.format(prompt.body, GetFavoriteDisplayName(favorite.item))
+        local popup = PopupDialogScreen(prompt.title, body, {
+            {
+                text = prompt.yes,
+                cb = function()
+                    GLOBAL.TheFrontEnd:PopScreen()
+                    local index = SlotIsBusy(FAVORITED_ITEMS, slot_number)
+                    if index ~= false then
+                        table.remove(FAVORITED_ITEMS, index)
+                        HAVE_FAVORITED = true
+                        GLOBAL.TheSim:SetPersistentString(FAVITSAVE, TableToString(FAVORITED_ITEMS), false)
+                        SendFavorites(true)
+                        HAVE_FAVORITED = #FAVORITED_ITEMS > 0
+                        RefreshFavoriteMarkers()
+                    end
+                end,
+            },
+            {
+                text = prompt.no,
+                cb = function()
+                    GLOBAL.TheFrontEnd:PopScreen()
+                end,
+            },
+        }, nil, "small", "dark")
+        GLOBAL.TheFrontEnd:PushScreen(popup)
     end
 
     -- The server may not have received the saved favorite table yet when the
