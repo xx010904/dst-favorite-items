@@ -312,6 +312,7 @@ if GLOBAL.TheNet:GetIsClient() then
     local FAVITSAVE = "FAVORITEITEMS"
     local FAVORITE_SLOT_WIDGETS = {}
     local FAVORITES_SYNC_PENDING = true
+    local CLIENT_INVENTORY_SYNC_PENDING = false
 
     local function GetFavoriteForSlot(slot_number)
         for _, favorite in ipairs(FAVORITED_ITEMS) do
@@ -401,6 +402,30 @@ if GLOBAL.TheNet:GetIsClient() then
     local function SendClear()
         SendModRPCToServer(GetModRPC(MOD_RPC, "ClearFavorites"))
     end
+
+    -- The server may not have received the saved favorite table yet when the
+    -- first inventory event arrives. Resend it from the owning client's
+    -- replicated inventory events so the server can reconcile immediately.
+    local function QueueClientInventorySync(inst)
+        if inst ~= GLOBAL.ThePlayer or not HAVE_FAVORITED or CLIENT_INVENTORY_SYNC_PENDING then return end
+        CLIENT_INVENTORY_SYNC_PENDING = true
+        inst:DoTaskInTime(0.2, function()
+            CLIENT_INVENTORY_SYNC_PENDING = false
+            if inst == GLOBAL.ThePlayer then
+                SendFavorites(true)
+            end
+        end)
+    end
+
+    AddPlayerPostInit(function(inst)
+        if inst:HasTag("player") then
+            for _, event in ipairs({ "itemget", "itemlose", "gotnewitem", "dropitem", "equip", "unequip", "newactiveitem" }) do
+                inst:ListenForEvent(event, function()
+                    QueueClientInventorySync(inst)
+                end)
+            end
+        end
+    end)
 
     -- 读取本地收藏存档
     GLOBAL.TheSim:GetPersistentString(FAVITSAVE, function(success, str)
