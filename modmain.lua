@@ -413,7 +413,9 @@ if GLOBAL.TheNet:GetIsClient() then
         marker:SetPosition(slot_x, slot_y + slot_height * 0.5 + 16) -- centered above the slot, lowered slightly
         marker.star = marker:AddChild(Text(FAVORITE_MARKER_FONT, 30, "★"))
         marker.star:SetColour(1, 0.82, 0.2, 0.58)
-        marker:SetOnClick(function() end)
+        marker.OnControl = function()
+            return false
+        end
         marker:Hide()
         invslot.favorite_marker = marker
         marker.favorite_marker_base_gain = marker.OnGainFocus
