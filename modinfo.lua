@@ -1,17 +1,65 @@
 -- This information tells other players more about the mod
-name = "Favorite Items"
-description = [[
+name = ChooseTranslationTable({
+    [1] = "Favorite Items",
+    zh = "收藏物品",
+    zht = "收藏物品",
+    zhr = "收藏物品",
+})
+
+description = ChooseTranslationTable({
+    [1] = [[
 Favorite your items and keep them locked to the slots you choose.
 
 How to use:
-    - Pick up an item with the mouse, press the favorite key (default V), then click the slot you want to lock it to.
-    - Press the favorite key + click again to remove the favorite.
-    - Pick up an item, press the favorite key + click another slot to move it.
-    - Press CTRL + SHIFT + Z to clear all favorited items. (Useful when something goes wrong)
+    - Press the favorite key (default V) over an empty slot to hide or show favorite stars.
+    - Hold the favorite key over an item slot, then click the slot where you want to lock the item.
+    - Left-click a favorite star to move one stack from your equipped backpack or an open container into that slot.
+    - Right-click a favorite star and confirm to remove its marker.
+    - Press CTRL + SHIFT + Z to clear all favorite markers.
 
-- You can favorite multiple items, each on its own slot.
-- Items inside backpacks cannot be favorited.
-]]
+- You can favorite multiple items, each in its own slot.
+- Items stored inside backpacks cannot be marked directly; use the star to move a stack into the inventory first.
+]],
+    zh = [[
+收藏物品，让它们固定在你选择的物品栏槽位中。
+
+使用方法：
+    - 在空槽位上按收藏键（默认 V），可隐藏或显示所有收藏星星。
+    - 将鼠标移到物品槽位并按住收藏键，然后点击要锁定到的槽位。
+    - 左键点击收藏星星，可从装备的背包或当前打开的容器中移入一组物品。
+    - 右键点击收藏星星，并确认移除该槽位的标记。
+    - 按 CTRL + SHIFT + Z 可清除所有收藏标记。
+
+- 可以收藏多个物品，每个物品占用一个槽位。
+- 背包里的物品不能直接设置收藏；先点击星星将一组物品移入物品栏。
+]],
+    zht = [[
+收藏物品，讓它們固定在你選擇的物品欄欄位中。
+
+使用方法：
+    - 在空欄位上按收藏鍵（預設 V），可隱藏或顯示所有收藏星星。
+    - 將滑鼠移到物品欄位並按住收藏鍵，然後點擊要鎖定的欄位。
+    - 左鍵點擊收藏星星，可從裝備的背包或目前開啟的容器移入一組物品。
+    - 右鍵點擊收藏星星，並確認移除該欄位的標記。
+    - 按 CTRL + SHIFT + Z 可清除所有收藏標記。
+
+- 可以收藏多個物品，每個物品佔用一個欄位。
+- 背包裡的物品不能直接設定收藏；先點擊星星將一組物品移入物品欄。
+]],
+    zhr = [[
+收藏物品，让它们固定在你选择的物品栏槽位中。
+
+使用方法：
+    - 在空槽位上按收藏键（默认 V），可隐藏或显示所有收藏星星。
+    - 将鼠标移到物品槽位并按住收藏键，然后点击要锁定到的槽位。
+    - 左键点击收藏星星，可从装备的背包或当前打开的容器中移入一组物品。
+    - 右键点击收藏星星，并确认移除该槽位的标记。
+    - 按 CTRL + SHIFT + Z 可清除所有收藏标记。
+
+- 可以收藏多个物品，每个物品占用一个槽位。
+- 背包里的物品不能直接设置收藏；先点击星星将一组物品移入物品栏。
+]],
+})
 
 author = "XJS"
 version = "2.0.0"
